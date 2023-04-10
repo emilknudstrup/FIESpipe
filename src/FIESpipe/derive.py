@@ -187,12 +187,14 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	'''Cross-correlation function.
 
 	Perform the cross correlation 
+
 	.. math:: 
 		\sigma^2 (v) = - \\left [ N  \\frac{C^{\prime \prime}(\hat{s})}{C(\hat{s})} \\frac{C^2(\hat{s})}{1 - C^2(\hat{s})} \\right ]^{-1} \, ,
 
 	where :math:`C(\hat{s})` is the cross-correlation function, and :math:`C^{\prime \prime}(\hat{s})` the second derivative. :math:`N` is the number of bins.
+	
 	Here using :py:func:`numpy.correlate`.
-	The arrays are trimmed to only include points over RV range.
+	The arrays are trimmed to only include points over the RV range.
 	
 	:param fl: Flipped and resampled flux.
 	:type  fl: array
@@ -263,17 +265,21 @@ def sumCCF(ccf):
 def getError(rv, ccf, ccferr):
 	'''RV error from CCF profile.
 
-	Error estimated from Eqs. (8)-(10) in `cite:t:`Lafarga2020`:
+	Error estimated from Eqs. (8)-(10) in :cite:t:`Lafarga2020`:
+	
 	.. math::
-		\sigma_{\rm CCF}^2 (v) = \Sigma_{\rm o} \sigma^2(v)_{\rm CCF,o} (v) \left (\mathrm{dCCF}(v)/\mathrm{d} v \right)^{-1} 
-		\sigma (v) = \sigma (v)^2_{\rm CCF} (v) \left (\mathrm{dCCF}(v)/\mathrm{d} v \right)^{-1}
-		\sigma_{\rm RV} = \left ( \sqrt{\Sigma_v 1/\sigma^2(v)} \right)^{-1}
-		
-	where o is a given order.
+		\sigma_\\mathrm{CCF}^2 (v) = \sum_o \sigma^2(v)_{\\mathrm{CCF},o} (v) \left (\\frac{\\mathrm{dCCF}(v)}{\\mathrm{d} v} \\right)^{-1} 
 
-	Implemented similar to `raccoon.ccf.computerverr`_:
-	https://github.com/mlafarga/raccoon/blob/master/raccoon/ccf.py
-	#line 89
+	.. math::
+		\sigma (v) = \sigma (v)^2_\\mathrm{CCF} (v) \left (\\mathrm{dCCF}(v)/\\mathrm{d} v \\right)^{-1}
+
+	.. math::
+		\sigma_\\mathrm{RV} = \left ( \sqrt{\Sigma_v 1/\sigma^2(v)} \\right)^{-1}
+		
+	where :math:`o` is a given order.
+
+	Implemented similar to :py:func:`raccoon.ccf.computerverr`:
+	https://github.com/mlafarga/raccoon/blob/master/raccoon/ccf.py#L89
 
 	:param rv: RV grid.
 	:type rv: array
@@ -307,6 +313,7 @@ def chi2(yo,ym,yerr):
 	'''Chi-squared.
 
 	Chi-squared function:
+	
 	.. math::
 		\\chi^2 = \\sum_{i=1}^{N} \\frac{(y_i - \\hat{y}_i)^2}{\\sigma_i^2}
 
@@ -327,7 +334,7 @@ def chi2(yo,ym,yerr):
 def chi2RV(drvs,wl,nfl,fle,twl,tfl):
 	'''RVs through Chi-squared.
 
-	Compute :math:`\chi^2` for each RV using :py:func:`chi2` for each RV in `drvs`.
+	Compute :math:`\\chi^2` for each RV using :py:func:`chi2` for each RV in `drvs`.
 
 	:param drvs: RV grid in km/s.
 	:type drvs: array
@@ -342,8 +349,9 @@ def chi2RV(drvs,wl,nfl,fle,twl,tfl):
 	:param tfl: Template flux.
 	:type tfl: array
 
-	:return: :math:`\chi^2` for each RV.
+	:return: :math:`\\chi^2` for each RV.
 	:rtype: array
+
 	'''
 
 	chi2s = np.array([])
@@ -367,18 +375,22 @@ def chi2RV(drvs,wl,nfl,fle,twl,tfl):
 def Gauss(x, amp, mu, sig, off):
 	'''Gaussian function.
 	
+	.. math::
+
+		f(x) = A e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}} + B
+
 	:param x: x-values.
 	:type x: array
-	:param amp: Amplitude.
+	:param amp: Amplitude, :math:`A`.
 	:type amp: float
-	:param mu: Mean.
+	:param mu: Mean, :math:`\\mu`.
 	:type mu: float
-	:param sig: Standard deviation.
+	:param sig: Standard deviation, :math:`\\sigma`.
 	:type sig: float
-	:param off: y-axis offset of baseline.
+	:param off: y-axis offset of baseline, :math:`B`.
 	:type off: float
 
-	:return: Gaussian function
+	:return: Gaussian function calculated at x.
 	:rtype: array
 	'''
 	y = amp*np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.))) + off
@@ -425,11 +437,19 @@ def fitGauss(xx,yy,yerr=None,guess=None,flipped=False):
 		hm = 0.5*amp + off
 		left = np.where(xx < mu)[0]
 		right = np.where(xx > mu)[0]
-		lidx = np.argmin(np.abs(yy[left]-hm))
-		ridx = np.argmin(np.abs(yy[right]-hm))
-
-		## width is difference between left and right half-maximum
-		width = xx[right[ridx]] - xx[left[lidx]]
+		## When there's very little signal in the CCF
+		## it's difficult to find the half-maximum
+		## estimate it as somewhere close to the center
+		## Probably doesn't matter much
+		## since it's going to be a poor fit anyway
+		try:
+			lidx = np.argmin(np.abs(yy[left]-hm))
+			ridx = np.argmin(np.abs(yy[right]-hm))
+			## width is difference between left and right half-maximum
+			width = xx[right[ridx]] - xx[left[lidx]]
+		except ValueError:
+			mu = xx[len(yy)//2]
+			width = xx[len(yy)//2 + 5] - xx[len(yy)//2 - 5]
 
 		## sigma is width/2.355
 		sig = width/(2*np.sqrt(2*np.log(2)))
@@ -488,6 +508,229 @@ def getRV(vel,ccf,ccferr=None,guess=None,flipped=False):
 	econt = 100*np.sqrt(np.power(off,-2)*np.power(eamp,2) + np.power(amp*eoff,2)*np.power(off,-4))
 
 	return rv, erv, fwhm, efwhm, cont, econt
+
+def getBIS(x,y,xerr=np.array([]),
+	n = 100,
+	bybotmin_percent=10.,
+	bybotmax_percent=40.,
+	bytopmin_percent=60.,
+	bytopmax_percent=90.,
+	dx = None,
+	):
+	'''BIS calculation.
+	
+	Calculate bisector from CCF following the approach in Section 4.6.3 of :cite:t:`Lafarga2020`.
+
+	The BIS is calculated as the difference between the top part in the interval (in percent)
+	bytopmin_percent to bytopmax_percent and the bottom part in the interval (in percent)
+	bybotmin_percent to bybotmax_percent of the CCF. 
+
+	Implemented identical to :py:func:`raccoon.ccf.computebisector_biserr`:
+	https://github.com/mlafarga/raccoon/blob/master/raccoon/ccf.py#L332
+
+
+	.. note::
+		Will (currently) only work now if the CCF has a peak (rather than a dip as for an absorption line).
+
+	:param x: Velocity grid.
+	:type x: array
+	:param y: CCF.
+	:type y: array
+	:param xerr: Velocity errors. Default is `numpy.array([])`. If empty, no error is returned.
+	:type xerr: array
+	:param n: Number of points for bisector. Default is 100.
+	:type n: int
+	:param bybotmin_percent: Minimum percent for bottom of bisector. Default is 10.
+	:type bybotmin_percent: float
+	:param bybotmax_percent: Maximum percent for bottom of bisector. Default is 40.
+	:type bybotmax_percent: float
+	:param bytopmin_percent: Minimum percent for top of bisector. Default is 60.
+	:type bytopmin_percent: float
+	:param bytopmax_percent: Maximum percent for top of bisector. Default is 90.
+	:type bytopmax_percent: float
+
+	:return: bisector, bisector error (if `xerr` is not empty).
+	:rtype: float, float
+
+	'''
+
+
+	if n < 100:
+		print('Sampling for bisector is too low! (n < 100).')
+
+	## Find peak
+	## This should be flipped if the CCF has the shape of an absorption line
+	peak = np.argmax(y)
+	left = np.argmin(y[:peak])
+	right = peak + np.argmin(y[peak:])
+	if right != len(y): right = right + 1
+	y_small = np.max([y[left],y[right-1]])
+
+
+	#ax2.plot(x[left],y[left],marker='o')
+	#ax2.plot(x[peak],y[peak],marker='o')
+	#ax2.plot(x[right-1],y[right-1],marker='o')
+
+	## Y span for bisector
+	by = np.linspace(y_small,y[peak],n)
+
+	#ax2.plot(x[left:peak+1],y[left:peak+1])
+	#ax2.plot(x[peak:right],y[peak:right])
+
+	## Interpolate to find x values for bisector
+	int_left = sci.interp1d(y[left:peak+1],x[left:peak+1],kind='linear')
+	int_right = sci.interp1d(y[peak:right],x[peak:right],kind='linear')
+	bx1 = int_left(by)
+	bx2 = int_right(by)
+
+	## Bisector
+	bx = (bx2 + bx1)/2.
+
+	# Bisector up and down region limits -> absolute value
+	by_min = np.min(by)
+	by_max = np.max(by)
+	dy = by_max - by_min
+
+	bybotmin = by_min + dy*bybotmin_percent/100.
+	bybotmax = by_min + dy*bybotmax_percent/100.
+	bytopmin = by_min + dy*bytopmin_percent/100.
+	bytopmax = by_min + dy*bytopmax_percent/100.
+
+	# Bisector up and down region limits indices
+	# Note: Approximate regions, depend on bisector sampling
+	ibybotmin = np.argmin(np.abs(by-bybotmin))
+	ibybotmax = np.argmin(np.abs(by-bybotmax))
+	ibytopmin = np.argmin(np.abs(by-bytopmin))
+	ibytopmax = np.argmin(np.abs(by-bytopmax))
+
+	# Compute mean RV in each region
+	bxmeantop = np.mean(bx[ibytopmin:ibytopmax+1])
+	bxmeanbot = np.mean(bx[ibybotmin:ibybotmax+1])
+
+	# Compute bisector inverse slope BIS
+	bis = bxmeantop - bxmeanbot
+
+	if len(xerr):
+		## Identical approach to compute bisector error
+		## Bisector x error values
+		## Interpolate to find x error values for bisector
+		int_left_err = sci.interp1d(y[left:peak+1], xerr[left:peak+1], kind='linear')
+		int_right_err = sci.interp1d(y[peak:right], xerr[peak:right], kind='linear')
+
+		## Bisector x error values
+		bx1err = int_left_err(by)
+		bx2err = int_right_err(by)
+
+		## Compute bisector error (error propagation)
+		bxerr = np.sqrt(bx1err**2 + bx2err**2)/2.
+
+		## Top and bottom regions x width (use only one side of the line)
+		dx_top = np.abs(int_left(bytopmax) - int_left(bytopmin))
+		dx_bot = np.abs(int_left(bybotmax) - int_left(bybotmin))
+
+		## Number of points
+		if dx == None:
+			dx = np.median(np.diff(x))
+		ntop = dx_top/dx
+		nbot = dx_bot/dx
+
+		## Mean error top and bottom regions
+		bxtopmeanerr = np.mean(bxerr[ibybotmin:ibybotmax+1])/np.sqrt(ntop)
+		bxbotmeanerr = np.mean(bxerr[ibytopmin:ibytopmax+1])/np.sqrt(nbot)
+
+		## BIS error
+		biserr = np.sqrt(bxtopmeanerr**2 + bxbotmeanerr**2)
+
+		return bis, biserr
+	
+	return bis
+
+def triangle(vals,mode,lower,upper):
+	'''Triangle function for weighting.
+	
+	Generate a triangular weighting function for a given mode, lower, and upper.
+	Used to estimate the Ca II H and K cores as described in Section 2.1 of :cite:t:`Isaacson2010`.
+
+	:param vals: Values to weight.
+	:type vals: array
+	:param mode: Mode of the triangle.
+	:type mode: float
+	:param lower: Lower bound of the triangle.
+	:type lower: float
+	:param upper: Upper bound of the triangle.
+	:type upper: float
+	
+	:return: Weights for the given values.
+	:rtype: array
+
+	'''
+	left = mode - lower
+	right = mode + upper
+	weights = np.zeros(len(vals))
+	
+	for ii, val in enumerate(vals):
+		if val >= left and val <= mode:
+			weights[ii] = (val-left)/((right-left)*(mode-left))
+		if val > mode and val <= right:
+			weights[ii] = (right-val)/((right-left)*(right-mode))
+
+	return weights
+
+# =============================================================================
+# Statistics
+# =============================================================================
+def weightedMean(vals,errs,out=True,sigma=5.0):
+	'''Calculate weighted mean and error.
+
+	As in Eqs. (14) and (15) in :cite:t:`Zechmeister2018`:
+
+	.. math::
+		v = \\frac{\\sum w_o v_o}{\\sum w_o} \, , 
+	
+	.. math::
+		w = \\left ( \\frac{1}{\sum w_o} \cdot \\frac{1}{N_o-1} \cdot \sum (v_o-v)^2 \cdot w_o \\right )^{1/2}
+	
+	where :math:`w_o = 1/\\sigma_o^2` and :math:`v_o` is the RV for order :math:`o` and :math:`\sigma_o` is the error.
+
+	:param vals: Values.
+	:type vals: array
+	:param errs: Errors.
+	:type errs: array
+	:param out: Outlier rejection? Default is True.
+	:type out: bool
+	:param sigma: Sigma for outlier rejection. Default is 5.0.
+	:type sigma: float
+	
+	:return: Weighted mean, weighted error.
+	:rtype: float, float
+	
+	'''
+	
+	## reject outliers
+	if out:
+		mu, sig = scs.norm.fit(vals)
+		sig *= sigma
+		keep = (vals < (mu + sig)) & (vals > (mu - sig))
+		vals = vals[keep]
+		errs = errs[keep]
+
+	## calculate the weights
+	weights = 1./errs**2
+	
+	## calculate the weighted mean
+	mean = np.sum(weights*vals)/np.sum(weights)
+	
+	## calculate the weighted error
+	term1 = 1./np.sum(1./errs**2)
+	term2 = 1./(len(vals)-1.0)
+	term3 = np.sum((vals-mean)**2/errs**2)
+	err = np.sqrt(term1*term2*term3)
+
+	if out:
+		return mean, err, mu, sigma
+
+	return mean, err
+
 
 # def getRV(vel,ccf,nbins=0,zucker=False,no_peak=50,poly=True,degree=1):
 # 	'''Extract radial velocities.

@@ -178,6 +178,9 @@ def getBarycorrs(filename, rvsys):
 	:param rvs: Array of radial velocities derived from filenames.
 	:type rvs: array
 
+	.. note::
+		Could be altered to also be able to deal with other instruments.
+
 	'''
 	loc = 'Roque de los Muchachos'
 	#rvs_cor = np.empty_like(rvs)
@@ -207,10 +210,13 @@ def getBarycorrs(filename, rvsys):
 def velRes(R=67000,s=2.1):
 	'''Velocity resolution.
 	
-	The resolution of the spectrograph in velocity space
-	.. math:: 
-		\Delta v = \frac{c}{R \cdot s}
+	The resolution of the spectrograph in velocity space.
 
+	.. math::
+		\Delta v = \\frac{c}{R \cdot s}
+		
+	where :math:`c` is the speed of light, :math:`R` is the spectral resolution, and :math:`s` is the spectral sampling in pixels per spectral element.
+	
 	The default values are for the FIES spectrograph, collected from:
 	http://www.not.iac.es/instruments/fies/fies-commD.html#wavelengths
 

@@ -1,0 +1,6 @@
+numpy
+sphinx-rtd-theme
+nbsphinx
+sphinxcontrib-bibtex
+ipython
+graphviz
