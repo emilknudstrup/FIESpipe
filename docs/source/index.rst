@@ -21,6 +21,7 @@ A pipeline to extract radial velocities and activity indicators from FIES spectr
    
    API/extract
    API/derive
+   API/evince
 
 .. toctree::
    :maxdepth: 1

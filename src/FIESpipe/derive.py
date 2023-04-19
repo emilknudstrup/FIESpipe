@@ -24,7 +24,10 @@ def normalize(wl,fl,bl=np.array([]),poly=1,gauss=True,lower=0.5,upper=1.5):
 
 
 	.. note::
-		Normalization could probably be improved.
+		This is an obvious place to start with improving the results/precision of the RVs:
+			-Normalization could probably be improved
+			-Outlier rejection more sophisticated
+			-Blaze function correction, available in other data products?
 
 	:param wl: Observed wavelength 
 	:type wl: array 
@@ -96,15 +99,16 @@ def crm(wl,nfl,err=np.array([]),iters=1,q=[99.0,99.9,99.99]):
 		err = np.ones(len(wl))
 		ret = False
 
+	idxs = np.array([],dtype=int)
 	for ii in range(iters):
 		cut = np.percentile(nfl,q[ii]) # find upper percentile
 		cosmic = nfl > cut # cosmic ray mitigation
 		wl, nfl = wl[~cosmic], nfl[~cosmic]
 		err = err[~cosmic]
-	
+		idxs = np.append(idxs,np.where(cosmic)[0])
 	if ret:
-		return wl, nfl, err
-	return wl, nfl
+		return wl, nfl, err, idxs
+	return wl, nfl, idxs
 
 def resample(wl,nfl,fle,twl,tfl,dv=1.0,edge=0.0):
 	'''Resample spectrum.
@@ -237,30 +241,30 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 
 	return rvs, ccf, ccferr
 
-def sumCCF(ccf):
-	'''Sum CCF.
+# def sumCCF(ccf):
+# 	'''Sum CCF.
 	
-	Sum CCFs from different orders.
+# 	Sum CCFs from different orders.
 
-	.. note::
-		Add option to weight CCFs by S/N of orders
-		or some other weighting scheme.
-		BUT the S/N of the CCFs already take the S/N 
-		of the flux in a given order into account,
-		so probably not necessary.
+# 	.. note::
+# 		Add option to weight CCFs by S/N of orders
+# 		or some other weighting scheme.
+# 		BUT the S/N of the CCFs already take the S/N 
+# 		of the flux in a given order into account,
+# 		so probably not necessary.
 
-	:param ccf: CCF.
-	:type ccf: array
+# 	:param ccf: CCF.
+# 	:type ccf: array
 
-	:return: Summed CCF.
-	:rtype: array
-	'''
-	ccfsum = np.zeros(ccf.shape[1])
-	for ii in range(ccf.shape[0]):
-		ccfsum += ccf[ii]
+# 	:return: Summed CCF.
+# 	:rtype: array
+# 	'''
+# 	ccfsum = np.zeros(ccf.shape[1])
+# 	for ii in range(ccf.shape[0]):
+# 		ccfsum += ccf[ii]
 	
 
-	return ccfsum
+# 	return ccfsum
 
 def getError(rv, ccf, ccferr):
 	'''RV error from CCF profile.
@@ -366,13 +370,13 @@ def chi2RV(drvs,wl,nfl,fle,twl,tfl):
 
 		## interpolate template
 		fi = sci.interp1d(twl_order,tfl_order,fill_value='extrapolate')
-
+		
 		## calculate chi2
 		chi2s = np.append(chi2s,chi2(nfl,fi(wl),fle))
 	
 	return chi2s
 
-def Gauss(x, amp, mu, sig, off):
+def Gauss(x, amp, mu, sig, off=0.0):
 	'''Gaussian function.
 	
 	.. math::
@@ -387,7 +391,7 @@ def Gauss(x, amp, mu, sig, off):
 	:type mu: float
 	:param sig: Standard deviation, :math:`\\sigma`.
 	:type sig: float
-	:param off: y-axis offset of baseline, :math:`B`.
+	:param off: y-axis offset of baseline, :math:`B`. Default is 0.0.
 	:type off: float
 
 	:return: Gaussian function calculated at x.
@@ -566,16 +570,9 @@ def getBIS(x,y,xerr=np.array([]),
 	if right != len(y): right = right + 1
 	y_small = np.max([y[left],y[right-1]])
 
-
-	#ax2.plot(x[left],y[left],marker='o')
-	#ax2.plot(x[peak],y[peak],marker='o')
-	#ax2.plot(x[right-1],y[right-1],marker='o')
-
 	## Y span for bisector
 	by = np.linspace(y_small,y[peak],n)
 
-	#ax2.plot(x[left:peak+1],y[left:peak+1])
-	#ax2.plot(x[peak:right],y[peak:right])
 
 	## Interpolate to find x values for bisector
 	int_left = sci.interp1d(y[left:peak+1],x[left:peak+1],kind='linear')
@@ -641,9 +638,9 @@ def getBIS(x,y,xerr=np.array([]),
 		## BIS error
 		biserr = np.sqrt(bxtopmeanerr**2 + bxbotmeanerr**2)
 
-		return bis, biserr
+		return bis, bx, by, biserr
 	
-	return bis
+	return bis, bx, by
 
 def triangle(vals,mode,lower,upper):
 	'''Triangle function for weighting.

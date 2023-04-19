@@ -11,6 +11,7 @@ import astropy.io.fits as pyfits
 from astropy.time import Time
 from barycorrpy import get_BC_vel, utc_tdb
 from astropy import constants as const
+import pickle 
 #from scipy.constants import speed_of_light
 
 # =============================================================================
@@ -166,17 +167,20 @@ def sortFIES(path):
 
 	return science, thar
 
-def getBarycorrs(filename, rvsys):
+def getBarycorrs(filename, rvmeas):
 	'''Barycentric correction.
 
 	Function to correct for the barycentric velocity, 
 	and convert the time of the observation to BJD TDB.
 
-	:param filenames: List of filenames.
-	:type filenames: list
+	:param filename: FIES fits file.
+	:type filename: str
 	
-	:param rvs: Array of radial velocities derived from filenames.
-	:type rvs: array
+	:param rvsys: The measured radial velocity. See :py:mod:`barycorrpy` @ https://github.com/shbhuk/barycorrpy/blob/master/barycorrpy/barycorrpy.py#L99.
+	:type rvsys: float
+
+	:return: BJD TDB, barycentric velocity correction
+	:rtype: float, float
 
 	.. note::
 		Could be altered to also be able to deal with other instruments.
@@ -189,32 +193,37 @@ def getBarycorrs(filename, rvsys):
 	#rvs_cor = np.empty_like(bjds)
 	#for i, filename in enumerate(filenames):
 	#_, _, jd, _, star, _, _, _, hdr = extractFIESold(filename, return_hdr=True)
-	_, _, jd, _, star, _, _, hdr = extractFIESold(filename, return_hdr=True)
+	#_, _, jd, _, star, _, _, hdr = extractFIESold(filename, return_hdr=True)
+	_, _, _, hdr = extractFIES(filename)
+	
+	date_mid = hdr['DATE-AVG']
+	jd = Time(date_mid, format='isot', scale='utc').jd
+	star = hdr['OBJECT']
 
 	ra = hdr['OBJRA']*15.0		# convert unit
 	dec = hdr['OBJDEC']
 	#z_meas = rvs[i]*1000 / const.c.value #speed_of_light
-	z_meas = rvsys*1000 / const.c.value #speed_of_light
+	z_meas = rvmeas*1000 / const.c.value #speed_of_light
 	rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, starname=star, ephemeris='de432s', obsname=loc, zmeas=z_meas)
 	rv_cor = rv_cor / 1000	 # from m/s to km/s
 	#rvs_cor[i] = rv_cor
 	bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, starname=star, obsname=loc)
 	#bjds[i] = bjd
-	return bjd, rv_cor-rvsys
+	return bjd, rv_cor[0]-rvmeas
 
 
 # =============================================================================
 # Grids and resolution
 # =============================================================================
 
-def velRes(R=67000,s=2.1):
+def velRes(R=67000,s=2.1,fib=None):
 	'''Velocity resolution.
 	
 	The resolution of the spectrograph in velocity space.
 
 	.. math::
 		\Delta v = \\frac{c}{R \cdot s}
-		
+
 	where :math:`c` is the speed of light, :math:`R` is the spectral resolution, and :math:`s` is the spectral sampling in pixels per spectral element.
 	
 	The default values are for the FIES spectrograph, collected from:
@@ -224,15 +233,26 @@ def velRes(R=67000,s=2.1):
 	:type R: float
 	:param s: Spectral sampling in pixels per spectral element. Default is 2.1.
 	:type s: float
+	:param fib: Fibre number. Default is ``None``. If ``None``, the default values are used (fibre 4).
+	:type fib: int
 
 	:return: Velocity resolution in km/s.
 	:rtype: float
 	
 	'''
+	if fib == 1:
+		R, s = 25000, 5.9
+	elif fib == 2:
+		R, s = 45000, 3.2
+	elif fib == 3:
+		R, s = 45000, 3.2
+	elif fib == 4:
+		R, s = 67000, 2.1
+
 	dv = 1e-3*const.c.value/(R*s)
 	return dv
 
-def grids(rvr=401,R=67000,s=2.1):
+def grids(rvr=401,R=67000,s=2.1,fib=None):
 	'''Grids for CCFs.
 
 	Create the CCF grids for the given radial velocity range and resolution.
@@ -243,18 +263,20 @@ def grids(rvr=401,R=67000,s=2.1):
 
 	:param rvr: (Desired) radial velocity range for the CCF in km/s. Default is 401.
 	:type rvr: int
-	:param R: Spectral resolution. Default is 67000 (FIES, see :py:func:`velRes`).
+	:param R: Spectral resolution. Default is 67000 (FIES fibre 4, see :py:func:`velRes`).
 	:type R: float
 	:param s: Spectral sampling in pixels per spectral element. Default is 2.1 (FIES, see :py:func:`velRes`).
 	:type s: float
-
+	:param fib: Fibre number. Default is ``None``. If ``None``, the default values are used (fibre 4).
+	:type fib: int
+	
 	:return: CCF grid, CCF error grid, actual radial velocity range, finer CCF grid, finer CCF error grid, finer radial velocity range
 	:rtype: array, array, int, array, array, int
 
 	'''
 
 	## Get the velocity resolution
-	dv = velRes(R=R,s=s)
+	dv = velRes(R=R,s=s,fib=fib)
 
 	## This is the actual RV range
 	arvr = int(rvr/dv)
@@ -361,3 +383,14 @@ def getFIES(data,order=40):
 	arr = data['order_{:d}'.format(order)]
 	wl, fl = arr[:,0], arr[:,1]
 	return wl, fl
+
+
+# =============================================================================
+# Read data product
+# =============================================================================
+
+def readDataProduct(filename):
+	with open(filename, 'rb') as f:
+		loaded_dict = pickle.load(f)
+	
+	return loaded_dict
