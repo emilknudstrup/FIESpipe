@@ -527,6 +527,9 @@ def servalish(filenames,
 	ck = 3, # degree of spline, cubic
 	outer = 3, # iteration, outlier rejection creating master template
 	ignore=False,
+	norders=range(20,70), # orders to use to extract RVs
+	out=True,
+	sigma_out=5,
 	**std_kwargs,
 	):
 	'''SERVAL style template matching 
@@ -676,6 +679,74 @@ def servalish(filenames,
 		## This is to be able to evaluate the spline at any wavelength
 		servalData[key]['template'] = [knots,spline]
 
+	## And now loop over all epochs
+	## to extract the RVs 
+	chi2rvr = 20 
+	dv = 0.1
+	pidx = 3
+	endData = {}
+	## Velocity grid for the RV extraction
+	all_times = np.array([])
+	all_rvs = np.array([])
+	all_ervs = np.array([])
+	#return servalData, endData
 
+	drvs = np.arange(-chi2rvr,chi2rvr,dv)
+	for ii, data in enumerate(dats):
+		#orders = data['orders']
+		time = data['BJD_TDB']
+		bvc = data['BVC']
+		mrv = data['order_all']['RV']
+		emrv = data['order_all']['eRV']
+		rvs, ervs = np.array([]), np.array([])
+		## Loop over all orders
+		for ii, order in enumerate(norders):
+			key = 'order_{}'.format(order)
+			wl, nfl, nfle = data[key]['spectrum'][0], data[key]['spectrum'][1], data[key]['spectrum'][2]
+			twl, spline = servalData[key]['template'][0], servalData[key]['template'][1]
+			chi2s = np.array([])
+			## Chi2 approach to find RV
+			## Similar to the one used in SERVAL
+			## and above in standard workflow
+			for drv in drvs:
+				## Subtract bvc and add measured RV
+				## to center on 0.0 km/s
+				ds = drv - bvc + mrv 
+				wl_shift = wl/(1.0 + ds*1e3/const.c.value)
 
-	return servalData
+				mask = (wl_shift > min(twl)) & (wl_shift < max(twl))
+				ys = spline(wl_shift[mask])
+				chi2 = np.sum((ys - nfl[mask])**2/nfle[mask]**2)
+				chi2s = np.append(chi2s,chi2)
+			## Find dip
+			peak = np.argmin(chi2s)
+
+			## Don't use the entire grid, only points close to the minimum
+			## For bad CCFs, there might be several valleys
+			## in most cases the "real" RV should be close to the middle of the grid
+			if (peak >= (len(chi2s) - pidx)) or (peak <= pidx):
+				peak = len(chi2s)//2
+			keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
+			
+			pars = np.polyfit(drvs[keep],chi2s[keep],2)
+			## Add the measured RV to get proper value
+			rv = -pars[1]/(2*pars[0]) + mrv
+			## The curvature is taking as the error.		
+			erv = np.sqrt(2/pars[0])
+			## Only append if both values are finite
+			if np.isfinite(rv) & np.isfinite(erv):
+				rvs = np.append(rvs,rv)
+				ervs = np.append(ervs,erv)
+		
+		## Calculate the weighted average RV
+		wavg_rv, wavg_err, mu, std  = weightedMean(rvs,ervs,out=out,sigma=sigma_out)
+		print('Weighted average RV: {:.3f} +/- {:.3f} km/s'.format(wavg_rv,wavg_err))
+		all_times = np.append(all_times,time)
+		all_rvs = np.append(all_rvs,wavg_rv)
+		all_ervs = np.append(all_ervs,wavg_err)
+
+	endData['times'] = all_times
+	endData['rvs'] = all_rvs
+	endData['ervs'] = all_ervs
+
+	return servalData, endData
