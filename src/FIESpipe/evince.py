@@ -292,3 +292,78 @@ def plotBIS(data,
 
 	ax.legend(loc='best')
 
+# =============================================================================
+# "SERVAL" data products
+# =============================================================================
+
+
+def plotCoaddTemplate(data,
+				    orders=[45,46,47,48,49],
+					ignore=False):
+	'''Plot the coadded template.
+
+	Plot the coadded template for the specified orders as well as the residuals/outliers.
+	
+	:param data: Dictionary containing the data. From :py:func:`FIESpipe.workflows.servalish`.
+	:type data: dict
+	:param orders: List of orders to plot. Default is [45,46,47,48,49].
+	:type orders: list
+	:param ignore: Ignore the warning about the number of orders to plot. Default is False.
+	:type ignore: bool
+
+	'''
+	fig = plt.figure()
+	ax1 = fig.add_subplot(211)
+	ax2 = fig.add_subplot(212)
+	ax2.set_xlabel('Wavelength (Angstrom)')
+	ax1.set_ylabel('Flux')
+	ax2.set_ylabel('Residuals')
+
+	if not ignore:
+		assert len(orders) < 10, 'Number of orders should be less than 10. Otherwise it will be hard to assess the results. Set ignore=True to ignore this warning.'
+
+	## Loop over the specified orders
+	for ii, order in enumerate(orders):
+		key = 'order_{}'.format(order)
+		files = data[key]['files'].keys()
+		for file in files:
+			warr = data[key]['files'][file]
+			ax1.errorbar(warr[0],warr[1],yerr=warr[2],marker='o',alpha=0.25)
+
+
+		arr = data[key]['spectrum']
+		wl, fl, efl = arr[0], arr[1], arr[2]
+
+		## Plot the spline
+		knots, spline = servalData[key]['template']
+		## Only give the label for the first order
+		if ii:
+			ax1.plot(knots,spline(knots),color='k',zorder=15,lw=2.0)
+		else:
+			ax1.plot(knots,spline(knots),color='k',zorder=15,label='spline',lw=2.0)
+
+
+		## Plot the residuals
+		## and outliers
+		outer = servalData[key]['rejection']['iterations']
+		for jj in range(outer):
+			yhat, res, swl, mu, sigma = servalData[key]['rejection']['iteration_{}'.format(jj)]['filter']
+			ax2.plot(swl,res,alpha=0.25,color='C7')
+			owl, ofl, ofle = servalData[key]['rejection']['iteration_{}'.format(jj)]['outliers']
+			if ii or jj:
+				ax1.plot(owl,ofl,marker='x',color='C3',ls='none')
+				ax1.plot(swl,yhat,color='k',lw=2.0,zorder=10)
+				ax1.plot(swl,yhat,color='C7',lw=1.0,zorder=11)
+				ax2.plot(swl,mu*np.ones_like(swl),color='C3')				
+			else:
+				ax1.plot(owl,ofl,marker='x',color='C3',label='outlier',ls='none')
+				ax1.plot(swl,yhat,color='k',lw=2.0,zorder=10)
+				ax1.plot(swl,yhat,color='C7',label='savgol filter',lw=1.0,zorder=11)
+				ax2.plot(swl,mu*np.ones_like(swl),color='C3',label='mean')
+
+			## Plot the sigma regions
+			ax2.fill_between([min(swl),max(swl)],mu+sigma,mu-sigma,alpha=0.1,color='C{}'.format(jj+outer))
+
+
+	ax1.legend()
+	ax2.legend()

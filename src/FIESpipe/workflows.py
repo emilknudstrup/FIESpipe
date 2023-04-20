@@ -541,6 +541,36 @@ def servalish(filenames,
 	When creating the knots for the spline, the attempt is to get as close to the ones returned by the :py:mod:`SERVAL` splines (https://github.com/mzechmeister/serval/blob/master/src/cspline.py#L1),
 	this is achieved with inspiration from this answer:
 	https://stackoverflow.com/questions/49191877/how-to-set-manual-knots-in-scipy-interpolate-splprep-in-case-of-periodic-boundar
+
+	:param filenames: List of filenames to use for template matching. Should be larger than 3.
+	:type filenames: list
+	:param run_standard: Run the standard reduction in :py:func:`FIESpipe.workflows.standard` before template matching. Default is True, otherwise give a list of data products already produced by :py:func:`FIESpipe.workflows.standard`.
+	:type run_standard: bool
+	:param knot_freq: Frequency of knots in the spline. Default is 1, which means that the number of knots are equal to the wavelength spacing in a given order.
+	:type knot_freq: float
+	:param sigma: Sigma clipping for outlier rejection when creating the master template. Default is 5.
+	:type sigma: float
+	:param window_length: Window length for Savitzky-Golay filter. Default is 51.
+	:type window_length: int
+	:param sk: Degree of Savitzky-Golay filter. Default is 3.
+	:type sk: int
+	:param ck: Degree of cubic B-spline. Default is 3.
+	:type ck: int
+	:param outer: Number of iterations for outlier rejection when creating the master template. Default is 3.
+	:type outer: int
+	:param ignore: Ignore the check that the number of files is larger than 3. Default is False.
+	:type ignore: bool
+	:param norders: Orders to use for RV extraction. Default is range(20,70).
+	:type norders: list
+	:param out: Use outlier rejection when extracting RVs. Default is True.
+	:type out: bool
+	:param sigma_out: Sigma clipping for outlier rejection when extracting RVs. Default is 5.
+	:type sigma_out: float
+	:param std_kwargs: Keyword arguments for :py:func:`FIESpipe.workflows.standard`.
+	:type std_kwargs: dict
+
+	:returns: Dictionaries with the data products from the template matching, and the final data products.
+	:rtype: dict, dict
 	
 	.. note::
 		- Using cubic B-spline from :py:mod:`scipy` instead of the ones from https://github.com/mzechmeister/serval/blob/master/src/cspline.py#L1.
