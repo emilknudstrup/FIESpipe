@@ -70,20 +70,6 @@ def standard(filename,
 	S-index derived from the Ca II H and K lines following the approach in Section 3.1.2 of :cite:t:`BoroSaikia2018`.
 	
 
-
-	.. note::
-		- For poor data/low S/N, the Gaussian fits can crash. ``np.nan`` is inserted into the output dictionary.
-		- For now, the template is hardcoded. This should be fixed in the future.
-		- Oversampled CCFs are hardcoded to be 0.25 km/s.
-		- BIS error seems rather large. Determined from oversampled CCFs, but :cite:t:`Lafarga2020` uses the actual velocity resolution and gets a much smaller error.
-		- S-index should perhaps be estimated from the merged spectrum instead?
-			* ...merged spectrum should perhaps also be used for the first guess for the systemic velocity?
-			* ...and to estimate :math:`T_\mathrm{eff}`, :math:`\log g`, and :math:`[\mathrm{Fe/H}]`?
-		- RV :math:`\chi^2` minimization can be done by fitting a gaussian. 
-			* Default is a second order polynomial fit as in :cite:t:`Zechmeister2018`.
-			* This seems more robust, but the gaussian fit seems to have less RV drift across the orders, because the wings are taking into account.
-			* The weighted mean and error seem to agree quite well between the two methods.
-
 	:param filename: Name of the file to be processed.
 	:type filename: str
 	:param ins: Instrument used to acquire the data. Currently only FIES is supported.
@@ -110,19 +96,19 @@ def standard(filename,
 	:type sigma: float
 	:param npoly: Degree of the polynomial used to normalize the spectrum.
 	:type npoly: int
-	:param CaIIH: Wavelength of the Ca II H line in Angstroms.
+	:param CaIIH: Wavelength of the Ca II H line in Å. Default is 3968.47 Å.
 	:type CaIIH: float
-	:param CaIIK: Wavelength of the Ca II K line in Angstroms.
+	:param CaIIK: Wavelength of the Ca II K line in Å. Default is 3933.664 Å.
 	:type CaIIK: float
-	:param width: Width of the Ca II lines in Angstroms.
+	:param width: Width of the Ca II lines in Å. Default is 1.09 Å.
 	:type width: float
-	:param Rsection_low: Lower limit of the wavelength range for the red continuum :cite:p:`BoroSaikia2018` in Angstroms.
+	:param Rsection_low: Lower limit of the wavelength range for the red continuum :cite:p:`BoroSaikia2018` in Å.
 	:type Rsection_low: float
-	:param Rsection_high: Upper limit of the wavelength range for the red continuum :cite:p:`BoroSaikia2018` in Angstroms.
+	:param Rsection_high: Upper limit of the wavelength range for the red continuum :cite:p:`BoroSaikia2018` in Å.
 	:type Rsection_high: float
-	:param Vsection_low: Lower limit of the wavelength range for the blue continuum :cite:p:`BoroSaikia2018` in Angstroms.
+	:param Vsection_low: Lower limit of the wavelength range for the blue continuum :cite:p:`BoroSaikia2018` in Å.
 	:type Vsection_low: float
-	:param Vsection_high: Upper limit of the wavelength range for the blue continuum :cite:p:`BoroSaikia2018` in Angstroms.
+	:param Vsection_high: Upper limit of the wavelength range for the blue continuum :cite:p:`BoroSaikia2018` in Å.
 	:type Vsection_high: float
 	:param outdir: Output directory. If not provided, the current directory is used.
 	:type outdir: str
@@ -134,6 +120,28 @@ def standard(filename,
 
 	:return: Dictionary with the results of the processing.
 	:rtype: dict
+
+	.. note::
+		- For poor data/low S/N, the Gaussian fits can crash. ``np.nan`` is inserted into the output dictionary.
+		- For now, the template is hardcoded. This should be fixed in the future.
+		- Oversampled CCFs are hardcoded to be 0.25 km/s.
+		- BIS error seems rather large. Determined from oversampled CCFs, but :cite:t:`Lafarga2020` uses the actual velocity resolution and gets a much smaller error.
+		- S-index should perhaps be estimated from the merged spectrum instead?
+			* ...merged spectrum should perhaps also be used for the first guess for the systemic velocity?
+			* ...and to estimate :math:`T_\mathrm{eff}`, :math:`\log g`, and :math:`[\mathrm{Fe/H}]`?
+		- RV :math:`\chi^2` minimization can be done by fitting a gaussian. 
+			* Default is a second order polynomial fit as in :cite:t:`Zechmeister2018`.
+			* This seems more robust, but the gaussian fit seems to have less RV drift across the orders, because the wings are taking into account.
+			* The weighted mean and error seem to agree quite well between the two methods.
+		- Naming scheme for the output files, revise?
+		- How do we provide the template?
+			* Option to provide [temp_wl,temp_fl] as input?
+			* Option to provide a filename for a Kurucz atmosphere?
+			* Option to give :math:`T_\mathrm{eff}`, :math:`\log g`, and :math:`[\mathrm{Fe/H}]` and find best-matching Kurucz atmosphere in local dir?
+		- It seems for hot stars, the CCFs for some orders are not very good.
+			* Maybe a selection of orders should be made based on the :math:`T_\mathrm{eff}`?
+			* Or we find the S/N for a CCF in a given order and reject orders with low S/N?
+			* Fast rotators... Broadening function?
 	
 	Example
 	-------
@@ -182,9 +190,12 @@ def standard(filename,
 	## do a preliminary RV measurement
 	if rvsys is None:
 		## to shift template
-		bvc = 0.0
-		tempwl = twl*(1.0 - bvc*1e3/const.c.value)
+		
+		## REMOVE
+		#bvc = 0.0
+		#tempwl = twl*(1.0 - bvc*1e3/const.c.value)
 		#tempwl = twl*(1.0 + bvc*1e3/const.c.value)
+		
 		rvsys_est = []
 		for ii in range(40,50):
 			key = 'order_{}'.format(ii)
@@ -192,23 +203,31 @@ def standard(filename,
 			rel_err = rfle/rfl
 			wl, nfl = normalize(rwl,rfl)
 			nfle = rel_err*nfl
-			lam, resamp_flip_fl, resamp_flip_tfl, resamp_flip_fle = resample(wl,nfl,nfle,tempwl,tfl,dv=1)
+			lam, resamp_flip_fl, resamp_flip_tfl, resamp_flip_fle = resample(wl,nfl,nfle,twl,tfl,dv=1)
 			rvs, ccf, errs = getCCF(resamp_flip_fl,resamp_flip_tfl,resamp_flip_fle,rvr=601,dv=1)
 			rvsys_est.append(rvs[np.argmax(ccf)])
+			
+			#lam, resamp_flip_fl, resamp_flip_tfl, resamp_flip_fle = resample(wl,nfl,nfle,tempwl,tfl,dv=1)
 		
 		rvsys = np.median(rvsys_est)
-		## Get the barycentric correction AND the BJD in TDB
+		
+		## REMOVE
 		#bjd, bvc_temp = getBarycorrs(filename,rvsys)# Fix this, should not depend on instrument
-		bjd, _ = getBarycorrs(filename,rvsys)# Fix this, should not depend on instrument
-		data['BJD_TDB'] = bjd
 		#data['BVC'] = bvc_temp
+
+	## Get the BJD in TDB
+	bjd, _ = getBarycorrs(filename,rvsys)# Fix this, should not depend on instrument
+	data['BJD_TDB'] = bjd
 	
-	
-	## Shift the template to center the grid on 0 km/s
+	## REMOVE
 	bvc_temp = 0.
+	#bvc = 0.
+	
 	#stwl = twl/(1.0 + (rvsys-bvc_temp)*1e3/const.c.value)
 	#stwl = twl/(1.0 + (bvc-rvsys)*1e3/const.c.value)
-	stwl = twl*(1.0 + (rvsys-bvc)*1e3/const.c.value)
+	
+	## Shift the template to center the grid on 0 km/s
+	stwl = twl*(1.0 + (rvsys-bvc_temp)*1e3/const.c.value)
 
 	## Collect data for S-index
 	data['CaIIH'] = {
@@ -234,7 +253,7 @@ def standard(filename,
 	## Loop over orders
 	for ii in use_orders:
 		key = 'order_{}'.format(ii)
-		## Extract the data
+		## Extract the data, 0-indexed
 		rwl, rfl, rfle = wave[ii-1], flux[ii-1], err[ii-1]
 		rel_err = rfle/rfl
 		## Normalize the data
@@ -258,7 +277,7 @@ def standard(filename,
 				## back to systemic velocity
 				rv = pars[1]
 				erv = perr[1]
-				if verbose: print('Gaussian fit order {}: RV = {:.3f} +/- {:.3f} km/s'.format(ii,rv,erv))
+				if verbose: print('Gaussian fit order {}: RV = {:.3f} +/- {:.3f} km/s'.format(ii,rv+rvsys,erv))
 			except RuntimeError:
 				if verbose: print('Gaussian to get RV fit failed for order {}. \n Probably low S/N.'.format(ii))
 				rv = np.nan
@@ -283,7 +302,7 @@ def standard(filename,
 			
 			## The curvature is taking as the error.
 			erv = np.sqrt(2/pars[0])
-			if verbose: print('Poly 2 fit: RV = {:.3f} +/- {:.3f} km/s'.format(rv,erv))
+			if verbose: print('Poly 2 fit {}: RV = {:.3f} +/- {:.3f} km/s'.format(ii,rv+rvsys,erv))
 
 		data[key]['RV'] = rv+rvsys
 		data[key]['eRV'] = erv
@@ -525,11 +544,14 @@ def servalish(filenames,
 	window_length = 51, # savgol window
 	sk = 3, # savgol degree
 	ck = 3, # degree of spline, cubic
-	outer = 3, # iteration, outlier rejection creating master template
+	outer = 1, # iteration, outlier rejection creating master template
 	ignore=False,
 	norders=range(20,70), # orders to use to extract RVs
 	out=True,
 	sigma_out=5,
+	chi2rvr = 20,
+	dv = 0.1,
+	pidx = 3,
 	**std_kwargs,
 	):
 	'''SERVAL style template matching 
@@ -556,7 +578,7 @@ def servalish(filenames,
 	:type sk: int
 	:param ck: Degree of cubic B-spline. Default is 3.
 	:type ck: int
-	:param outer: Number of iterations for outlier rejection when creating the master template. Default is 3.
+	:param outer: Number of iterations for outlier rejection when creating the master template. Default is 1.
 	:type outer: int
 	:param ignore: Ignore the check that the number of files is larger than 3. Default is False.
 	:type ignore: bool
@@ -566,6 +588,12 @@ def servalish(filenames,
 	:type out: bool
 	:param sigma_out: Sigma clipping for outlier rejection when extracting RVs. Default is 5.
 	:type sigma_out: float
+	:param chi2rvr: RV range for :math:`\chi^2` fit. Default is 20 (km/s).
+	:type chi2rvr: float
+	:param dv: Step size for :math:`\chi^2` fit. Default is 0.1 (km/s).
+	:type dv: float
+	:param pidx: Number of indices to include in fitting the 2nd order polynomial to the :math:`\chi^2` fit. Default is 3.
+	:type pidx: int
 	:param std_kwargs: Keyword arguments for :py:func:`FIESpipe.workflows.standard`.
 	:type std_kwargs: dict
 
@@ -576,8 +604,9 @@ def servalish(filenames,
 		- Using cubic B-spline from :py:mod:`scipy` instead of the ones from https://github.com/mzechmeister/serval/blob/master/src/cspline.py#L1.
 		- The weights for creating the spline are just taken as :math:`1/\sigma_f`
 			- maybe more weighting could improve the results, like deweighting of telluric lines?
-
-			
+		- A second pair of eyes on the subtraction and adding of the barycentric correction would be good.
+		- Find the best way to filter out low S/N orders.
+	
 	Example
 	-------
 	>>> import FIESpipe as fp
@@ -589,8 +618,7 @@ def servalish(filenames,
 	for instance, the coadded template:
 	
 	>>> fp.plotCoaddTemplate(sdata)
-			
-				
+
 	'''
 	if not ignore:
 		Nfiles = len(filenames)
@@ -615,15 +643,15 @@ def servalish(filenames,
 		key = 'order_{}'.format(order)
 		servalData[key] = {}
 
+	## Orders with low S/N, bad quality
+	skip = []
 	## Create a template for each order
-	for order in orders:
+	for order in norders:
 		key = 'order_{}'.format(order)
 		swl = np.array([])
 		fl = np.array([])
 		fle = np.array([])
 		points = np.array([],dtype=int)
-		## REMOVE
-		#dWs = np.array([])
 
 		## Subdict for each file/epoch
 		servalData[key]['files'] = {}
@@ -635,30 +663,21 @@ def servalish(filenames,
 			
 			points = np.append(points,len(wl))
 			## Shift the wavelength to the rest frame
-			dv = rv - bvc
-			nwl = wl*(1.0 - dv*1e3/const.c.value)
+			drv = rv - bvc
+			nwl = wl*(1.0 - drv*1e3/const.c.value)
 			
 			servalData[key]['files'][filename[ii]] = [nwl,nfl,nfle]
 			
 			swl = np.append(swl,nwl)
 			fl = np.append(fl,nfl)
 			fle = np.append(fle,nfle)
-			## REMOVE
-			#dWs = np.append(dWs,max(nwl)-min(nwl))
 
-		## REMOVE
-		## Typical wavelength span
-		#dW = np.median(dWs)
-		
+
 		## How many points are in the wavelength
 		points = np.median(points)
 		## Sort the arrays by wavelength
 		ss = np.argsort(swl)
 		swl, fl, fle = swl[ss], fl[ss], fle[ss]
-
-		## REMOVE
-		## Total span of the wavelength
-		#dWtotal = max(swl)-min(swl)
 
 		## Outlier rejection
 		## Several iterations?
@@ -689,6 +708,19 @@ def servalish(filenames,
 
 		## Weights, maybe more can be done here... Telluric weights?
 		w = 1.0/fle
+		
+		## Median of the flux
+		## If the median is too low or too high, skip the order
+		## Find better estimate to skip order
+		## The flux errors/weight could also be a way to asses this
+		if np.median(fl) < 0.7:
+			print('Median of the flux is lower than 0.7. Skipping order {}'.format(order))
+			skip.append(order)
+			continue
+		elif np.median(fl) > 1.2:
+			print('Median of the flux is higher than 1.2. Skipping order {}'.format(order))
+			skip.append(order)
+			continue
 
 		## Number of knots, 
 		## just use the median number of points in wavelength
@@ -699,6 +731,7 @@ def servalish(filenames,
 		## The knots have to be within the range of the wavelength array
 		## ... this "hackiness" includes the knots[4:-4]
 		knots = np.linspace(swl[np.argmin(swl)],swl[np.argmax(swl)],Nknots)
+
 		## Get the coefficients for the spline
 		t, c, k = sci.splrep(swl, fl, w=w, k=ck, t=knots[4:-4])
 		## ...and create the spline
@@ -709,17 +742,14 @@ def servalish(filenames,
 		## This is to be able to evaluate the spline at any wavelength
 		servalData[key]['template'] = [knots,spline]
 
+	
 	## And now loop over all epochs
 	## to extract the RVs 
-	chi2rvr = 20 
-	dv = 0.1
-	pidx = 3
 	endData = {}
 	## Velocity grid for the RV extraction
 	all_times = np.array([])
 	all_rvs = np.array([])
 	all_ervs = np.array([])
-	#return servalData, endData
 
 	drvs = np.arange(-chi2rvr,chi2rvr,dv)
 	for ii, data in enumerate(dats):
@@ -731,6 +761,8 @@ def servalish(filenames,
 		rvs, ervs = np.array([]), np.array([])
 		## Loop over all orders
 		for ii, order in enumerate(norders):
+			if order in skip:
+				continue
 			key = 'order_{}'.format(order)
 			wl, nfl, nfle = data[key]['spectrum'][0], data[key]['spectrum'][1], data[key]['spectrum'][2]
 			twl, spline = servalData[key]['template'][0], servalData[key]['template'][1]
@@ -780,3 +812,88 @@ def servalish(filenames,
 	endData['ervs'] = all_ervs
 
 	return servalData, endData
+
+
+def prepareSpectra(
+		filenames, 
+		norders, 
+		tw, 
+		tf, 
+		pidx=4, 
+		drvs_coarse=np.arange(-200,200,1)
+		):
+	
+
+	prepped = {
+			'orders':norders,
+			'files':filenames
+	}
+	for ii, file in enumerate(filenames):
+		## Extract the data from the FITS file
+		wave, flux, ferr, hdr = extractFIES(file)
+		rvs = np.array([])
+		ervs = np.array([])
+		prepped[file] = {
+			'bjd':np.nan, 
+			'rv':np.nan, 
+			'erv':np.nan,
+		}
+		for jj, order in enumerate(norders):
+			w, f, e = wave[order], flux[order], ferr[order]
+			## Relative error
+			re = e/f
+			## Normalize the spectrum
+			wl, nfl = normalize(w,f)
+			## Scaled error
+			nfle = re*nfl
+
+			## Save the prepped spectrum
+			prepped[file][order] = {
+				'wave': wl,
+				'flux': nfl,
+				'err': nfle,
+			}
+			## Cosmic ray removal/outlier rejection
+			## Here only used to get the first guess for the RV
+			wlo, flo, eflo, idxs = crm(wl,nfl,nfle)
+
+			## Chi2 minimization for RVs
+			chi2s_c = chi2RV(drvs_coarse,wlo,flo,eflo,tw,tf)
+			#axchi.plot(drvs_coarse,chi2s_c,'--',color='C7')
+
+			## Find dip
+			peak_c = np.argmin(chi2s_c)
+			## Finer grid
+			drvs = np.arange(drvs_coarse[peak_c-10],drvs_coarse[peak_c+10],0.1)
+			chi2s = chi2RV(drvs,wlo,flo,eflo,tw,tf)
+			#axchi.plot(drvs,chi2s,'k-')
+			peak = np.argmin(chi2s)
+
+			## Don't use the entire grid, only points close to the minimum
+			## For bad orders, there might be several valleys
+			## in most cases the "real" RV should be close to the middle of the grid
+			keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
+
+			## Plot the minimum and the points to keep
+			#axchi.plot(drvs[keep],chi2s[keep],color='C0',lw=3,zorder=5)
+
+			## Fit a parabola to the points to keep
+			pars = np.polyfit(drvs[keep],chi2s[keep],2)
+
+			## The minimum of the parabola is the best RV
+			rv = -pars[1]/(2*pars[0])
+			## The curvature is taking as the error.
+			erv = np.sqrt(2/pars[0])
+			if np.isfinite(rv) & np.isfinite(erv):
+				rvs = np.append(rvs,rv)
+				ervs = np.append(ervs,erv)
+
+		wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+
+		## Get BJD_TDB 
+		bjd, _ = getBarycorrs(file,wavg_rv)
+		prepped[file]['bjd'] = bjd
+		prepped[file]['rv'] = wavg_rv
+		prepped[file]['erv'] = wavg_err
+
+	return prepped

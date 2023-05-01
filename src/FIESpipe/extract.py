@@ -110,7 +110,9 @@ def extractFIES(filename):
 		error = np.copy(flux[2,:,:])
 		flux = np.copy(flux[0,:,:])
 	else:
+		print('No flux errors available for {}'.format(filename))
 		error = np.ones(flux.shape)
+		print('Setting all errors to 1')
 	
 	# Figure out which header cards we want
 	cards = [x for x in sorted(hdr.keys()) if x.startswith('WAT2_')]
@@ -162,6 +164,8 @@ def sortFIES(path):
 		star = hdr['OBJECT']
 		if star == 'ThAr':
 			thar.append(file)
+		elif 'ThAr' in star:
+			thar.append(file)
 		else:
 			science.append(file)
 
@@ -183,10 +187,14 @@ def getBarycorrs(filename, rvmeas):
 	:rtype: float, float
 
 	.. note::
-		Could be altered to also be able to deal with other instruments.
+		- Could be altered to also be able to deal with other instruments.
+		- Exception omits star name, defaults to RA/DEC.
+		- Split into two functions, one for barycentric correction, one for BJD TDB?
 
 	'''
 	loc = 'Roque de los Muchachos'
+	
+	## REMOVE
 	#rvs_cor = np.empty_like(rvs)
 	#filenames = list(filenames)
 	#bjds = np.empty(len(filenames))#rvs.shape)
@@ -194,6 +202,7 @@ def getBarycorrs(filename, rvmeas):
 	#for i, filename in enumerate(filenames):
 	#_, _, jd, _, star, _, _, _, hdr = extractFIESold(filename, return_hdr=True)
 	#_, _, jd, _, star, _, _, hdr = extractFIESold(filename, return_hdr=True)
+
 	_, _, _, hdr = extractFIES(filename)
 	
 	date_mid = hdr['DATE-AVG']
@@ -202,15 +211,91 @@ def getBarycorrs(filename, rvmeas):
 
 	ra = hdr['OBJRA']*15.0		# convert unit
 	dec = hdr['OBJDEC']
+	
+	## REMOVE
 	#z_meas = rvs[i]*1000 / const.c.value #speed_of_light
+	
 	z_meas = rvmeas*1000 / const.c.value #speed_of_light
-	rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, starname=star, ephemeris='de432s', obsname=loc, zmeas=z_meas)
+	try:
+		rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, starname=star, ephemeris='de432s', obsname=loc, zmeas=z_meas)
+		bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, starname=star, obsname=loc)
+	except ValueError:
+		rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, ephemeris='de432s', obsname=loc, zmeas=z_meas)
+		bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, obsname=loc)
+
 	rv_cor = rv_cor / 1000	 # from m/s to km/s
+	
+	## REMOVE
 	#rvs_cor[i] = rv_cor
-	bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, starname=star, obsname=loc)
 	#bjds[i] = bjd
+	
 	return bjd, rv_cor[0]-rvmeas
 
+# =============================================================================
+# Group by epochs
+# =============================================================================
+
+def groupByEpochs(path,
+	thresh = 1/24., #hours
+	):
+	'''Group spectra by epochs.
+
+	Function to group spectra by epochs, in the sense that
+	spectra obtained in quick succession are grouped together.
+	Intended for observing strategies of the type:
+
+	.. graphviz::
+
+		digraph acq {
+			rankdir="LR";
+			th1 -> sci1 -> sci2 -> sci3 -> th2;
+			th1 [shape=box, label="ThAr"];
+			th2 [shape=box, label="ThAr"];
+			sci1 [label="Science"];
+			sci2 [label="Science"];
+			sci3 [label="Science"];
+		}
+	
+	:param path: Path to files.
+	:type path: str
+	:param thresh: Threshold for grouping epochs, in days. Default  ``1/24`` (1 hour).
+	:type thresh: float
+	
+	:returns: Dictionary with epochs (labeled as 1,2,3,...) as keys, and lists of filenames and timestamps (:math:`\mathrm{BJD}_\mathrm{TDB}`) as values.
+	:rtype: dict
+
+	'''
+
+	## Group into science and ThAr frames
+	filenames, tharnames = sortFIES(path)
+	filenames.sort()
+
+	## Store BJDs and filenames
+	bjds = np.array([])
+	scifiles = np.array([],dtype='str')
+
+	## Get BJDs (TDB)
+	for filename in filenames:
+		bjd, _ = getBarycorrs(filename,0)
+		bjds = np.append(bjds,bjd)
+		scifiles = np.append(scifiles,filename)
+
+	## Group by epochs
+	epochs = {}
+	booked = []
+	ll = 1
+	for ii, bjd in enumerate(bjds):
+		if bjd in booked: 
+			continue
+		booked.append(bjd)
+		diff = np.abs(bjds - bjd)
+		idxs = np.where(diff < thresh)[0]
+		for idx in idxs:
+			bjdnext = bjds[idx]
+			if bjdnext not in booked: booked.append(bjdnext)
+		epochs[ll] = {'names':list(scifiles[idxs]),'bjds':bjds[idxs]}
+		ll += 1
+	return epochs
 
 # =============================================================================
 # Grids and resolution
@@ -366,23 +451,23 @@ def extractFIESold(filename,return_hdr=False,check_ThAr=True):
 		return data, no_orders, bjd, vhelio, star, date, exp, hdr
 	return data, no_orders, bjd, vhelio, star, date, exp
 
-def getFIES(data,order=40):
-	'''Extract FIES spectrum.
+# def getFIES(data,order=40):
+# 	'''Extract FIES spectrum.
 
-	Extract calibrated spectrum from FIES at given order.
+# 	Extract calibrated spectrum from FIES at given order.
 		
-	:params data: Observed spectrum.
-	:type data: array
-	:param order: Extract spectrum at order. Default 30.
-	:type order: int, optional
+# 	:params data: Observed spectrum.
+# 	:type data: array
+# 	:param order: Extract spectrum at order. Default 30.
+# 	:type order: int, optional
 	
-	:return: observed wavelength, observed raw flux
-	:rtype: array, array
+# 	:return: observed wavelength, observed raw flux
+# 	:rtype: array, array
 
-	'''
-	arr = data['order_{:d}'.format(order)]
-	wl, fl = arr[:,0], arr[:,1]
-	return wl, fl
+# 	'''
+# 	arr = data['order_{:d}'.format(order)]
+# 	wl, fl = arr[:,0], arr[:,1]
+# 	return wl, fl
 
 
 # =============================================================================

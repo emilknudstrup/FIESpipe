@@ -10,8 +10,9 @@ from astropy import constants as const
 from scipy.optimize import curve_fit
 import scipy.stats as scs
 import scipy.interpolate as sci
-
-#from scipy.constants import speed_of_light
+import scipy.signal as scsig
+import lmfit
+from .extract import getBarycorrs
 
 # =============================================================================
 # Preparation/normalization
@@ -310,7 +311,11 @@ def getError(rv, ccf, ccferr):
 	return rverrt, der, rverr
 
 # =============================================================================
-# RV/activity indicators through Gaussian fitting
+# Spline creation
+# =============================================================================
+
+# =============================================================================
+# Chi-squared minimization
 # =============================================================================
 
 def chi2(yo,ym,yerr):
@@ -375,6 +380,11 @@ def chi2RV(drvs,wl,nfl,fle,twl,tfl):
 		chi2s = np.append(chi2s,chi2(nfl,fi(wl),fle))
 	
 	return chi2s
+
+# =============================================================================
+# RV/activity indicators through Gaussian fitting
+# =============================================================================
+
 
 def Gauss(x, amp, mu, sig, off=0.0):
 	'''Gaussian function.
@@ -464,14 +474,12 @@ def fitGauss(xx,yy,yerr=None,guess=None,flipped=False):
 
 	return gau_par, pcov
 
-def getRV(vel,ccf,ccferr=None,guess=None,flipped=False):
+def getRV(vel,ccf,ccferr=None,guess=None,flipped=False,return_pars=False):
 	'''Extract RVs and activity indicators.
 	
 	Get radial velocity and activity indicators from CCF by fitting a Gaussian.
 	Call to :py:func:`fitGauss` to fit Gaussian to CCF.
 
-	.. note::
-		Errors might be overestimated when just adopting the formal errors from the fit.
 
 	:param vel: Velocity in km/s.
 	:type vel: array
@@ -486,6 +494,10 @@ def getRV(vel,ccf,ccferr=None,guess=None,flipped=False):
 
 	:return: Radial velocity, radial velocity error, FWHM, FWHM error, contrast, contrast error, continuum, continuum error.
 	:rtype: tuple
+
+	.. note::
+		Errors might be overestimated when just adopting the formal errors from the fit.
+
 	'''
 
 	gau_par, pcov = fitGauss(vel,ccf,yerr=ccferr,guess=guess,flipped=flipped)
@@ -510,8 +522,13 @@ def getRV(vel,ccf,ccferr=None,guess=None,flipped=False):
 	eamp = perr[0]
 	eoff = perr[3]
 	econt = 100*np.sqrt(np.power(off,-2)*np.power(eamp,2) + np.power(amp*eoff,2)*np.power(off,-4))
-
+	if return_pars:
+		return rv, erv, fwhm, efwhm, cont, econt, gau_par, pcov
 	return rv, erv, fwhm, efwhm, cont, econt
+
+# =============================================================================
+# Bisector
+# =============================================================================
 
 def getBIS(x,y,xerr=np.array([]),
 	n = 100,
@@ -533,9 +550,8 @@ def getBIS(x,y,xerr=np.array([]),
 	https://github.com/mlafarga/raccoon/blob/master/raccoon/ccf.py#L332
 
 
-	.. note::
-		Will (currently) only work now if the CCF has a peak (rather than a dip as for an absorption line).
 
+		
 	:param x: Velocity grid.
 	:type x: array
 	:param y: CCF.
@@ -556,6 +572,10 @@ def getBIS(x,y,xerr=np.array([]),
 	:return: bisector, bisector error (if `xerr` is not empty).
 	:rtype: float, float
 
+	.. note::
+		- Will (currently) only work now if the CCF has a peak (rather than a dip as for an absorption line).
+		- Error is a bit large...
+		
 	'''
 
 
@@ -642,6 +662,11 @@ def getBIS(x,y,xerr=np.array([]),
 	
 	return bis, bx, by
 
+# =============================================================================
+# S-index 
+# =============================================================================
+
+
 def triangle(vals,mode,lower,upper):
 	'''Triangle function for weighting.
 	
@@ -724,10 +749,543 @@ def weightedMean(vals,errs,out=True,sigma=5.0):
 	err = np.sqrt(term1*term2*term3)
 
 	if out:
-		return mean, err, mu, sigma
+		return mean, err, mu, sig
 
 	return mean, err
 
+def outSavGol(wl,fl,efl,iter=2,window_length=51,k=3):
+	'''Outlier rejection using Savitzky-Golay filter.
+	
+	Outlier rejection using Savitzky-Golay filter from :py:func:`scipy.signal.savgol_filter`.
+
+	:param wl: Wavelength.
+	:type wl: array
+	:param fl: Flux.
+	:type fl: array
+	:param efl: Error in flux.
+	:type efl: array
+	:param iter: Number of iterations. Default is 2.
+	:type iter: int
+	:param window_length: Window length for Savitzky-Golay filter. Default is 51.
+	:type window_length: int
+	:param k: Polynomial order for Savitzky-Golay filter. Default is 3.
+	:type k: int
+
+	:return: Wavelength, flux, error in flux.
+	:rtype: array, array, array
+	
+	'''
+	for jj in range(iter):
+		## Savitzky-Golay filter for outlier rejection
+		yhat = scsig.savgol_filter(fl, window_length, k)
+		res = fl-yhat
+
+		## Rejection
+		mu, sig = scs.norm.fit(res)
+		sig *= 5	
+		keep = (res < (mu + sig)) & (res > (mu - sig))
+		
+		## Trim the arrays
+		wl, fl, efl = wl[keep], fl[keep], efl[keep]
+
+	return wl, fl, efl
+
+# =============================================================================
+# Broadening function
+# =============================================================================
+
+def getBF(fl,tfl,rvr=401,dv=1):
+	'''Broadening function.
+
+	Carry out the singular value decomposition (SVD) of the "design  matrix" following the approach in :cite:t:`Rucinski1999`.
+
+	This method creates the "design matrix" by applying a bin-wise shift to the template and uses ``numpy.linalg.svd`` to carry out the decomposition. 
+	The design matrix, :math:`\hat{D}`, is written in the form :math:`\hat{D} = \hat{U} \hat{W} \hat{V}^T`. The matrices :math:`\hat{D}`, :math:`\hat{U}`, and :math:`\hat{W}` are stored in homonymous attributes.
+
+	:param fl: Resampled flux.
+	:type fl: array
+	:param tfl: Resampled template flux.
+	:type tfl: array
+	:param rvr: Width (number of elements) of the broadening function. Needs to be odd.
+	:type rvr: int
+	:param dv: Velocity stepsize in km/s.
+	:type dv: int
+
+	:return: velocity in km/s, the broadening function
+	:rtype: array, array 
+
+	'''
+	bn = rvr/dv
+	if bn % 2 != 1: bn += 1
+	bn = int(bn) # Width (number of elements) of the broadening function. Must be odd.
+	bn_arr = np.arange(-int(bn/2), int(bn/2+1), dtype=float)
+	vel = -bn_arr*dv
+
+	nn = len(tfl) - bn + 1
+	des = np.matrix(np.zeros(shape=(bn, nn)))
+	for ii in range(bn): des[ii,::] = tfl[ii:ii+nn]
+
+	## Get SVD deconvolution of the design matrix
+	## Note that the `svd` method of numpy returns
+	## v.H instead of v.
+	u, w, v = np.linalg.svd(des.T, full_matrices=False)
+
+	wlimit = 0.0
+	w1 = 1.0/w
+	idx = np.where(w < wlimit)[0]
+	w1[idx] = 0.0
+	diag_w1 = np.diag(w1)
+
+	vT_diagw_uT = np.dot(v.T,np.dot(diag_w1,u.T))
+
+	## Calculate broadening function
+	bf = np.dot(vT_diagw_uT,np.matrix(fl[int(bn/2):-int(bn/2)]).T)
+	bf = np.ravel(bf)
+
+	return vel, bf
+
+def smoothBF(vel,bf,sigma=5.0):
+	'''Smooth broadening function.
+
+	Smooth the broadening function with a Gaussian.
+
+	:param vel: Velocity in km/s.
+	:type vel: array
+	:param bf: The broadening function.
+	:type bf: array
+	:param sigma: Smoothing factor. Default 5.0.
+	:type sigma: float, optional
+
+	:return: Smoothed BF.
+	:rtype: array
+
+	'''
+	nn = len(vel)
+	gauss = np.zeros(nn)
+	gauss[:] = np.exp(-0.5*np.power(vel/sigma,2))
+	total = np.sum(gauss)
+
+	gauss /= total
+	
+	bfgs = scsig.fftconvolve(bf,gauss,mode='same')
+
+	return bfgs
+
+def rotBFfunc(vel,ampl,vrad,vsini,gwidth,const=0.,limbd=0.68):
+	'''Rotational profile. 
+
+	The rotational profile obtained by convolving the broadening function with a Gaussian following :cite:t:`Kaluzny2006`.
+
+	:param vel: Velocity in km/s.
+	:type vel: array
+	:param ampl: Amplitude of BF.
+	:type ampl: float
+	:param vrad: Radial velocity in km/s, i.e., position of BF.
+	:type vrad: float
+	:param vsini: Projected rotational velocity in km/s, i.e., width of BF.
+	:type vsini: float
+	:param const: Offset for BF. Default 0.
+	:type const: float, optional
+	:param limbd: Value for linear limb-darkening coefficient. Default 0.68.
+	:type limbd: float, optional
+
+	:return: rotational profile
+	:rtype: array
+
+	'''
+
+	nn = len(vel)
+	#bf = np.zeros(nn)
+	bf = np.ones(nn)*const
+
+	a1 = (vel - vrad)/vsini
+	idxs = np.where(abs(a1) < 1.0)[0]
+	asq = np.sqrt(1.0 - np.power(a1[idxs],2))
+	bf[idxs] += ampl*asq*(1.0 - limbd + 0.25*np.pi*limbd*asq)
+
+	gs = np.zeros(nn)
+	cgwidth = np.sqrt(2*np.pi)*gwidth
+	gs[:] = np.exp(-0.5*np.power(vel/gwidth,2))/cgwidth
+
+	rotbf = scsig.fftconvolve(bf,gs,mode='same')
+
+	return rotbf
+
+
+def rotBFres(params,vel,bf,wf):
+	'''Residual rotational profile.
+	
+	Residual function for :py:func:`rotBFfit`.
+
+	:param params: Parameters. 
+	:type params: ``lmfit.Parameters()``
+	:param vel: Velocity in km/s.
+	:type vel: array
+	:param bf: Broadening function.
+	:type bf: array
+	:param wf: Weights.
+	:type wf: array
+
+	:return: residuals
+	:rtype: array
+
+	'''
+	ampl  = params['ampl1'].value
+	vrad  = params['vrad1'].value
+	vsini = params['vsini1'].value
+	gwidth = params['gwidth'].value
+	cons =  params['cons'].value
+	limbd = params['limbd1'].value
+
+	res = bf - rotBFfunc(vel,ampl,vrad,vsini,gwidth,cons,limbd)
+	return res*wf
+
+def rotBFfit(vel,bf,fitsize,res=67000,smooth=5.0,vsini=5.0,print_report=True):
+	'''Fit rotational profile.
+
+	:param vel: Velocity in km/s.
+	:type vel: array
+	:param bf: Broadening function.
+	:type bf: array
+	:param fitsize: Interval to fit within.
+	:type fitsize: int
+	:param res: Resolution of spectrograph. Default 67000 (FIES).
+	:type res: int, optional
+	:param vsini: Projected rotational velocity in km/s. Default 5.0.
+	:type vsini: float, optional
+	:param smooth: Smoothing factor. Default 5.0.
+	:type smooth: float, optional
+	:param print_report: Print the ``lmfit`` report. Default ``True``
+	:type print_report: bool, optional 
+
+	:return: result, the resulting rotational profile, smoothed BF
+	:rtype: ``lmfit`` object, array, array
+
+	'''
+	bfgs = smoothBF(vel,bf,sigma=smooth)
+	c = const.c.value*1e-3
+	gwidth = np.sqrt((c/res)**2 + smooth**2)
+
+	peak = np.argmax(bfgs)
+	idx = np.where((vel > vel[peak] - fitsize) & (vel < vel[peak] + fitsize+1))[0]
+
+	wf = np.zeros(len(bfgs))
+	wf[idx] = 1.0
+
+	params = lmfit.Parameters()
+	params.add('ampl1', value = bfgs[peak])
+	params.add('vrad1', value = vel[peak])
+	params.add('gwidth', value = gwidth,vary = True)
+	params.add('cons', value = 0.0)
+	params.add('vsini1', value = vsini)
+	params.add('limbd1', value = 0.68,vary = False)  
+
+	fit = lmfit.minimize(rotBFres, params, args=(vel,bfgs,wf),xtol=1.e-8,ftol=1.e-8,max_nfev=500)
+	if print_report: print(lmfit.fit_report(fit, show_correl=False))
+
+	ampl, gwidth = fit.params['ampl1'].value, fit.params['gwidth'].value
+	vrad, vsini = fit.params['vrad1'].value, fit.params['vsini1'].value
+	limbd, cons = fit.params['limbd1'].value, fit.params['cons'].value
+	model = rotBFfunc(vel,ampl,vrad,vsini,gwidth,cons,limbd)
+
+	return fit, model, bfgs
+
+# =============================================================================
+# Template matching, preliminary
+# =============================================================================
+
+def makeSplines(
+		normalized,
+		iter=1,
+		window_length=51,
+		k=3,
+		):
+	'''Make splines for template matching.
+	
+	:param normalized: Normalized spectra.
+	:type normalized: dict
+	:param iter: Number of iterations for outlier rejection through :py:func:`outSavGol` filter. Default 1.
+	:type iter: int, optional
+	:param window_length: Length of window for outlier rejection. Default 51.
+	:type window_length: int, optional
+	:param k: Polynomial degree for outlier rejection. Default 3.
+
+	:return: The spline for each order.
+	:rtype: dict
+
+	'''
+	norders = normalized['orders']
+	filenames = normalized['files']
+
+	splines = {}
+	## Loop over orders
+	for ii, order in enumerate(norders):
+		## Collect wavelength, flux, and error arrays
+		swl = np.array([])
+		fl = np.array([])
+		fle = np.array([])
+		## and the number of points in each spectrum
+		points = np.array([])
+		## Loop over files
+		for jj, file in enumerate(filenames):
+			wl, nfl, nfle = normalized[file][order]['wave'], normalized[file][order]['flux'], normalized[file][order]['err']
+			## Get derived RV
+			rv = normalized[file]['rv']
+			## Shift the spectrum according to the measured velocity
+			nwl = wl*(1.0 - rv*1e3/const.c.value)
+
+			swl = np.append(swl,nwl)
+			fl = np.append(fl,nfl)
+			fle = np.append(fle,nfle)
+			points = np.append(points,len(wl))
+
+		## How many points are in the wavelength
+		points = np.median(points)
+
+		## Sort the arrays by wavelength
+		ss = np.argsort(swl)
+		swl, fl, fle = swl[ss], fl[ss], fle[ss]
+		
+		## Savitzky-Golay filter for outlier rejection
+		swl, fl, fle = outSavGol(swl,fl,fle,iter=iter,window_length=window_length,k=k)
+		
+		## Weights
+		w = 1.0/fle
+
+		## Number of knots, 
+		## just use the median number of points in wavelength
+		Nknots = int(points)
+
+		## The following is a bit hacky
+		## The idea is to try to get as close to the knots as returned by the SERVAL spline
+		## The knots have to be within the range of the wavelength array
+		## ... this "hackiness" includes the knots[4:-4]
+		knots = np.linspace(swl[np.argmin(swl)],swl[np.argmax(swl)],Nknots)
+
+		## Get the coefficients for the spline
+		t, c, k = sci.splrep(swl, fl, w=w, k=3, t=knots[4:-4])
+		## ...and create the spline
+		spline = sci.BSpline(t, c, k, extrapolate=False)
+		
+		splines[order] = [swl,spline]
+
+	return splines
+
+def matchRVs(
+		normalized,
+		splines,
+		pidx=4):
+	'''Match spline template with spectra.
+	
+	Extract RVs using template matching, where the template is created from a spline fit to the spectra.
+
+	:param normalized: Normalized spectra.
+	:type normalized: dict
+	:param splines: Spline fits to the spectra.
+	:type splines: dict
+	:param pidx: The indices around the peak of the :math:`\chi^2` polynomium. Default 4.
+	:type pidx: int, optional
+
+	:return: The RVs extracted from the spectra.
+	:rtype: dict
+
+	'''
+	filenames = normalized['files']
+	orders = normalized['orders']
+	wrvs = {}
+	## Loop over files
+	for ii, file in enumerate(filenames):
+		## Get derived RV
+		wrv = normalized[file]['rv']
+		drvs = np.arange(wrv-10,wrv+10,0.1)
+
+		## Loop over orders
+		rvs = np.array([])
+		ervs = np.array([])
+		for jj, order in enumerate(orders):
+			## Collect the wavelength and spline
+			twl, spline = splines[order]
+			## Extract the wavelength, flux, and error arrays
+			wl, nfl, nfle = normalized[file][order]['wave'], normalized[file][order]['flux'], normalized[file][order]['err']
+
+			chi2s = np.array([])
+			for drv in drvs:
+				## Shift the spectrum 
+				wl_shift = wl/(1.0 + drv*1e3/const.c.value)
+				mask = (wl_shift > min(twl)) & (wl_shift < max(twl))
+				## Evaluate the spline at the shifted wavelength
+				ys = spline(wl_shift[mask])
+				chi2 = np.sum((ys - nfl[mask])**2/nfle[mask]**2)
+				chi2s = np.append(chi2s,chi2)
+			
+			## Find dip
+			peak = np.argmin(chi2s)
+
+			## Don't use the entire grid, only points close to the minimum
+			## For bad CCFs, there might be several valleys
+			## in most cases the "real" RV should be close to the middle of the grid
+			if (peak >= (len(chi2s) - pidx)) or (peak <= pidx):
+				peak = len(chi2s)//2
+			keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
+
+			pars = np.polyfit(drvs[keep],chi2s[keep],2)
+
+			## The minimum of the parabola is the best RV
+			rv = -pars[1]/(2*pars[0])
+			## The curvature is taking as the error.
+			erv = np.sqrt(2/pars[0])
+			if np.isfinite(rv) & np.isfinite(erv):
+				rvs = np.append(rvs,rv)
+				ervs = np.append(ervs,erv)
+		wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		bjd, bvc = getBarycorrs(file,wavg_rv)
+		wrvs[file] = [bjd,wavg_rv,wavg_err,bvc]
+
+	return wrvs
+
+def coaddSpectra(
+	filenames,
+	normalized,
+	orders=[]):
+	'''Coadd spectra.
+	
+	Coadd spectra using the normalized spectra.
+
+	:param filenames: List of filenames.
+	:type filenames: list
+	:param normalized: Normalized spectra.
+	:type normalized: dict
+	:param orders: List of orders to coadd. If empty, all orders from ``normalized`` are used.
+	:type orders: list
+	
+	:return: Coadded spectra.
+	:type: dict
+
+
+	'''
+
+	## If no orders are specified, 
+	## use all orders from the dict
+	if not len(orders):
+		orders = normalized['orders']
+
+	coadd = {'files':filenames,'orders':orders}
+	## For each order append flux and errors for each file
+	for order in normalized['orders']:
+		wls = np.array([])
+		fls = np.array([])
+		fles = np.array([])
+		for jj, file in enumerate(filenames):
+			wl = normalized[file][order]['wave']
+			fl = normalized[file][order]['flux']
+			fle = normalized[file][order]['err']
+			## Append the arrays
+			wls = np.append(wls,wl)
+			fls = np.append(fls,fl)
+			fles = np.append(fles,fle)
+
+		## Copy the wavelength array
+		## To keep track of indices
+		wlc = wl.copy()
+
+		## Outlier rejection
+		wls, fls, fles = outSavGol(wls,fls,fles,iter=2)
+
+		## Coadd the spectra
+		fwls = np.array([])
+		ffls = np.array([])
+		ferr = np.array([])
+		## Loop over the wavelengths
+		## if wavelength is still in the array
+		## take the mean of the fluxes
+		## and append to the arrays
+		for jj, wl in enumerate(wlc):
+			idxs = np.where(wls == wl)[0]
+			#if len(idxs) > 1:
+			if len(idxs):
+				fwls = np.append(fwls,wl)
+				ffls = np.append(ffls,np.mean(fls[idxs]))
+				## Propagate the errors
+				ferr = np.append(ferr,np.sqrt(np.sum(fles[idxs]**2)/len(idxs)))
+		## Append the coadded spectrum to the dict
+		coadd[order] = {'wave':fwls,'flux':ffls,'err':ferr}
+
+	return coadd
+
+def splineRVs(
+	coadd,
+	splines,
+	drvs,
+	orders=[],
+	pidx=3,	
+	):
+	'''Calculate RVs using splines.
+
+	Calculate RVs using splines on the ``coadded`` spectra.
+
+	:param coadd: Coadded spectra.
+	:type coadd: dict
+	:param splines: Splines for each order.
+	:type splines: dict
+	:param drvs: RV grid.
+	:type drvs: array
+	:param orders: List of orders to extract RVs for. If empty, all orders from ``coadd`` are used.
+	:type orders: list
+	:param pidx: Number of points to use for the parabola fit. Default is 3.
+	:type pidx: int
+
+	:return: RVs and errors.
+	:type: array, array
+
+	'''
+	if not len(orders):
+		orders = coadd['orders']
+
+	## Loop over orders
+	rvs = np.array([])
+	ervs = np.array([])
+	for jj, order in enumerate(orders):
+		## Collect the wavelength and spline
+		twl, spline = splines[order]
+		## Extract the wavelength, flux, and error arrays
+		wl, nfl, nfle = coadd[order]['wave'], coadd[order]['flux'], coadd[order]['err']
+
+		chi2s = np.array([])
+		for drv in drvs:
+			## Shift the spectrum 
+			wl_shift = wl/(1.0 + drv*1e3/const.c.value)
+			mask = (wl_shift > min(twl)) & (wl_shift < max(twl))
+			## Evaluate the spline at the shifted wavelength
+			ys = spline(wl_shift[mask])
+			chi2 = np.sum((ys - nfl[mask])**2/nfle[mask]**2)
+			chi2s = np.append(chi2s,chi2)
+		
+		## Find dip
+		peak = np.argmin(chi2s)
+
+		## Don't use the entire grid, only points close to the minimum
+		## For bad CCFs, there might be several valleys
+		## in most cases the "real" RV should be close to the middle of the grid
+		if (peak >= (len(chi2s) - pidx)) or (peak <= pidx):
+			peak = len(chi2s)//2
+		keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
+
+		pars = np.polyfit(drvs[keep],chi2s[keep],2)
+
+		## The minimum of the parabola is the best RV
+		rv = -pars[1]/(2*pars[0])
+		## The curvature is taking as the error.
+		erv = np.sqrt(2/pars[0])
+		if np.isfinite(rv) & np.isfinite(erv):
+			rvs = np.append(rvs,rv)
+			ervs = np.append(ervs,erv)
+	
+	wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+	return wavg_rv, wavg_err
+
+# =============================================================================
+# Deprecated
+# =============================================================================
 
 # def getRV(vel,ccf,nbins=0,zucker=False,no_peak=50,poly=True,degree=1):
 # 	'''Extract radial velocities.
@@ -758,7 +1316,7 @@ def weightedMean(vals,errs,out=True,sigma=5.0):
 # 	:param degree: Degree of polynomial fit. Default 1.
 # 	:type degree: int
 	
-# 	:returns: position of Gaussian--radial velocity in km/s, uncertainty of radial velocity in km/s
+# 	:return: position of Gaussian--radial velocity in km/s, uncertainty of radial velocity in km/s
 # 	:rtype: float, float
 
 # 	'''

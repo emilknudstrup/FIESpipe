@@ -7,8 +7,9 @@ Routines to plot the various data products.
 import matplotlib.pyplot as plt
 import numpy as np
 from .derive import Gauss, triangle
+from .extract import readDataProduct
 
-def Spectrum(data):
+def plotSpectrum(data):
 	'''Spectrum.
 
 	Plot the normalized (:py:func:`FIESpipe.derive.normalize` and perhaps :py:func:`FIESpipe.derive.crm` filtered) spectrum for each order.
@@ -37,7 +38,7 @@ def Spectrum(data):
 			pass
 	if ii: ax.legend(loc='best')
 
-def RVsols(data):
+def plotRVsols(data):
 	'''RV :math:`\chi^2` solutions.
 
 	Plot the RV solutions for each order.
@@ -45,14 +46,18 @@ def RVsols(data):
 	:param data: Dictionary containing the data.
 	:type data: dict
 
+	.. note::
+		- Barycentric correction is subtracted to display the raw RVs.
+
 	'''
 	
 	## Plot chi2 solution for RV
 	figchi = plt.figure()
 	axchi = figchi.add_subplot(111)
-	axchi.set_xlabel('Velocity (km/s)')
-	axchi.set_ylabel('$\chi^2$')
-	wavg_rv = data['order_all']['RV']
+	axchi.set_ylabel('Velocity (km/s)')
+	axchi.set_xlabel('Order')
+	bvc = data['BVC']
+	wavg_rv = data['order_all']['RV'] - bvc
 	wavg_err = data['order_all']['eRV']
 	use_orders = data['orders']
 	for order in use_orders:
@@ -100,7 +105,7 @@ def plotCCFs(data):
 		err = arr[2,:]
 		ax.errorbar(rv,ccf,yerr=err)
 
-def sumCCFit(data):
+def plotSumCCFit(data):
 	'''Gaussian fit for summed CCFs.
 
 	Plot the Gaussian fit for the summed CCFs, showing the FWHM and contrast.
@@ -135,7 +140,7 @@ def sumCCFit(data):
 	
 	axccf.legend(loc='best')
 
-def Sindex(data,
+def plotSindex(data,
 	CaIIH=3968.47,
 	CaIIK=3933.664,
 	width=1.09,
@@ -293,13 +298,47 @@ def plotBIS(data,
 	ax.legend(loc='best')
 
 # =============================================================================
+# Collection of data products
+# =============================================================================
+
+def plotRVs(filenames,returnData=False):
+	'''Plot RVs from data products
+
+	:param filenames: List of filenames processed through :py:func:`FIESpipe.workflows.standard`.
+	:type filenames: list
+	:param returnData: Return the data arrays.
+	:type returnData: bool
+	'''
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+	times = np.array([])
+	rvs = np.array([])
+	ervs = np.array([])
+	for filename in filenames:
+		data = readDataProduct(filename)
+		t = data['BJD_TDB']
+		r = data['order_all']['RV']
+		e = data['order_all']['eRV']
+		times = np.append(times,t)
+		rvs = np.append(rvs,r)
+		ervs = np.append(ervs,e)
+		ax.errorbar(t,r,yerr=e,fmt='o')
+
+	ax.set_xlabel(r'$\rm BJD_{TDB}$')
+	ax.set_ylabel('RV (km/s)')
+
+	if returnData:
+		return times, rvs, ervs
+
+# =============================================================================
 # "SERVAL" data products
 # =============================================================================
 
 
 def plotCoaddTemplate(data,
-				    orders=[45,46,47,48,49],
-					ignore=False):
+	orders=[45,46,47,48,49],
+	ignore=False,
+	):
 	'''Plot the coadded template.
 
 	Plot the coadded template for the specified orders as well as the residuals/outliers.
@@ -335,7 +374,7 @@ def plotCoaddTemplate(data,
 		wl, fl, efl = arr[0], arr[1], arr[2]
 
 		## Plot the spline
-		knots, spline = servalData[key]['template']
+		knots, spline = data[key]['template']
 		## Only give the label for the first order
 		if ii:
 			ax1.plot(knots,spline(knots),color='k',zorder=15,lw=2.0)
@@ -345,11 +384,11 @@ def plotCoaddTemplate(data,
 
 		## Plot the residuals
 		## and outliers
-		outer = servalData[key]['rejection']['iterations']
+		outer = data[key]['rejection']['iterations']
 		for jj in range(outer):
-			yhat, res, swl, mu, sigma = servalData[key]['rejection']['iteration_{}'.format(jj)]['filter']
+			yhat, res, swl, mu, sigma = data[key]['rejection']['iteration_{}'.format(jj)]['filter']
 			ax2.plot(swl,res,alpha=0.25,color='C7')
-			owl, ofl, ofle = servalData[key]['rejection']['iteration_{}'.format(jj)]['outliers']
+			owl, ofl, ofle = data[key]['rejection']['iteration_{}'.format(jj)]['outliers']
 			if ii or jj:
 				ax1.plot(owl,ofl,marker='x',color='C3',ls='none')
 				ax1.plot(swl,yhat,color='k',lw=2.0,zorder=10)

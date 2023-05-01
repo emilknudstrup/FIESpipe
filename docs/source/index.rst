@@ -8,15 +8,25 @@ Welcome to FIESpipe's documentation!
 
 A pipeline to extract radial velocities and activity indicators from FIES spectra.
 
+.. image:: gallery/ccf.gif
+
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 3
    :caption: Workflows
    
    workflows
 
+.. toctree::
+   :maxdepth: 4
+   :caption: Examples
+   
+   examples/basic
+   examples/broad
+   examples/chisq
+   examples/tempmatch
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: API
    
    API/extract
@@ -24,7 +34,13 @@ A pipeline to extract radial velocities and activity indicators from FIES spectr
    API/evince
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 3
+   :caption: Installation
+   
+   installation
+
+.. toctree::
+   :maxdepth: 3
    :caption: References
 
    references
