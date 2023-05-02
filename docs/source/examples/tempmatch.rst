@@ -19,7 +19,7 @@ The following shows two examples on how to do this:
 	* whereas the second example is a collection of calls to function doing the same thing as in the first example
 
 .. note::
-	The code take a bit of time to compile -- parallelize
+	The code takes a bit of time to compile -- parallelize
 
 Step-by-step
 ---------------------

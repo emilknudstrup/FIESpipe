@@ -99,6 +99,13 @@ The star here is :math:`\\gamma` Cephei A, which is a slow rotator, so it has ni
 >>> ax.plot(xx,fp.Gauss(xx,*pars),'k--')
 >>> ax.plot([rv-fw/2,rv+fw/2],[pars[0]*0.5+pars[3],pars[0]*0.5+pars[3]],label='FWHM',color='C3')
 >>> ax.plot([rv,rv],[pars[3],pars[3]+pars[0]],label='Contrast',color='C1')
+>>> ## Calculate BIS
+>>> ## First estimate error on RV grid/x-axis
+>>> errt, d, xerr = fp.getxError(rvs,ccf,errs)
+>>> ## BIS, BIS error
+>>> bis, bx, by, biserr = fp.getBIS(rvs,ccf,xerr)
+>>> ax.errorbar(rvs,ccf,yerr=errs,xerr=xerr)
+>>> ax.plot(bx,by,label='BIS',color='C2')
 >>> ax.legend()
 
 .. image:: ../../../examples/basic/ccf_fit.png
@@ -108,8 +115,9 @@ The star here is :math:`\\gamma` Cephei A, which is a slow rotator, so it has ni
 >>> rv += bvc
 >>> print('RV measured: {0:.3f} +/- {1:.3f} km/s'.format(rv,erv))
 
-.. note::
-	- Expand with an example of the BIS
+.. code-block:: bash
+
+	RV measured: -44.372 +/- 0.121 km/s
 
 '''
 import FIESpipe as fp
@@ -223,11 +231,19 @@ def basic(
 	ax = fig.add_subplot(111)
 	ax.set_xlabel(r'$\rm RV \ (km\,s^{-1})$')
 	ax.set_ylabel(r'$\rm CCF$')
-	ax.errorbar(rvs,ccf,yerr=errs)
 	xx = np.linspace(rvs.min(),rvs.max(),1000)
 	ax.plot(xx,fp.Gauss(xx,*pars),'k--')
 	ax.plot([rv-fw/2,rv+fw/2],[pars[0]*0.5+pars[3],pars[0]*0.5+pars[3]],label='FWHM',color='C3')
 	ax.plot([rv,rv],[pars[3],pars[3]+pars[0]],label='Contrast',color='C1')
+
+	## Calculate BIS
+	## First estimate error on RV grid/x-axis
+	errt, d, xerr = fp.getxError(rvs,ccf,errs)
+	## BIS, BIS error
+	bis, bx, by, biserr = fp.getBIS(rvs,ccf,xerr)
+	ax.errorbar(rvs,ccf,yerr=errs,xerr=xerr)
+	ax.plot(bx,by,label='BIS',color='C2')
+
 	ax.legend()
 	if save: fig.savefig(path+'/ccf_fit.png',bbox_inches='tight')
 
@@ -238,11 +254,10 @@ def basic(
 		'RV measured: {0:.3f} +/- {1:.3f} km/s'.format(rv,erv),
 	)
 
-	return	rv, erv, bjd[0], bvc, fw, efw, co, eco
+	return	rv, erv, bjd[0], bvc, fw, efw, co, eco, bis, biserr
 
 
 if __name__ == '__main__':
-	#rv, erv, bjd, bvc, fw, efw, co, eco = basic()
 	actual = basic()
 	desired = (
 		-44.37239055495838, #rv
@@ -253,6 +268,8 @@ if __name__ == '__main__':
 		0.14497382579032783, #efw
 		6.433613421862825, #co
 		0.13739220875952812, #eco
+		-0.06167927013553509, #bis
+		0.29880734861371294, #biserr
 		)
 
 	np.testing.assert_allclose(actual, desired, rtol=1e-2)

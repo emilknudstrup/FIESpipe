@@ -267,7 +267,7 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 
 # 	return ccfsum
 
-def getError(rv, ccf, ccferr):
+def getxError(rv, ccf, ccferr):
 	'''RV error from CCF profile.
 
 	Error estimated from Eqs. (8)-(10) in :cite:t:`Lafarga2020`:
@@ -303,16 +303,12 @@ def getError(rv, ccf, ccferr):
 	der = np.abs(np.gradient(ccf,dx))
 
 	## RV error grid
-	rverr = ccferr / der
+	rverr = np.power(ccferr,2) / der
 
 	## RV error total
 	rverrsum = np.sum(np.power(rverr,-2))
 	rverrt = 1./np.sqrt(rverrsum)
 	return rverrt, der, rverr
-
-# =============================================================================
-# Spline creation
-# =============================================================================
 
 # =============================================================================
 # Chi-squared minimization

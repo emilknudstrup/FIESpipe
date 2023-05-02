@@ -458,7 +458,7 @@ def standard(filename,
 	# err, der, xerr = getError(rvs, y, ccferrs)
 	# bis, biserr = getBIS(x, y, xerr)
 	## BIS estimate from oversampled CCF
-	err, der, xerr = getError(data['CCFsum_ov'][0,:], data['CCFsum_ov'][1,:], data['CCFsum_ov'][2,:])
+	err, der, xerr = getxError(data['CCFsum_ov'][0,:], data['CCFsum_ov'][1,:], data['CCFsum_ov'][2,:])
 	data['CCFsum_ov_xerr'] = xerr
 	y = data['CCFsum_ov'][1,:]
 	x = data['CCFsum_ov'][0,:]

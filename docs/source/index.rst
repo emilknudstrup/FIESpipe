@@ -24,7 +24,8 @@ A pipeline to extract radial velocities and activity indicators from FIES spectr
    examples/broad
    examples/chisq
    examples/tempmatch
-
+   examples/sidx
+   
 .. toctree::
    :maxdepth: 3
    :caption: API
