@@ -2,12 +2,12 @@
 A pipeline to extract CCFs, BISs, activity indicators, RVs etc. from FIES spectra
 
 
-* Installation
-.. code-block:: bash
+### Installation
+`cd /path/to`
 
-	$ cd /path/to
-	$ git clone https://github.com/emilknudstrup/FIESpipe.git
-	$ cd /path/to/FIESpipe
-	$ python -m pip install .
+`git clone https://github.com/emilknudstrup/FIESpipe.git`
 
+`cd /path/to/FIESpipe`
+
+`python -m pip install .`
 

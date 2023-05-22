@@ -3,8 +3,12 @@
 
 Example of how to use FIESpipe package on a faster rotating star.
 
-The approach is the same as in basic.py to begin with, 
+The approach is the same as in :ref:`basic` to begin with, 
 but eventually we use the broadening function to extract the line profile.
+
+Normalization and outlier rejection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 
 >>> import FIESpipe as fp
 >>> import matplotlib.pyplot as plt
@@ -67,6 +71,10 @@ but eventually we use the broadening function to extract the line profile.
 
 .. image:: ../../../examples/broad/norm_spec.png
 
+Cross-correlation function
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
 >>> ## Resample the template and the wavelength grid of the spectrum
 >>> dv = fp.velRes(R=67000,s=2.1) # km/s, velocity resolution of the FIES spectrograph using fibre 4
 >>> _, _, arvr, _, _, _ = fp.grids(rvr=201,R=67000,s=2.1) # velocity grid, range from 101 km/s
@@ -81,8 +89,11 @@ but eventually we use the broadening function to extract the line profile.
 
 .. image:: ../../../examples/broad/ccf.png
 
->>> ## Obviously the CCF is not very good, 
->>> ## let's try the broadening function
+Obviously the CCF is not very good, let's try the broadening function.
+
+Broadening function
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 >>> vel, bf = fp.getBF(resamp_fl,resamp_tfl,rvr=201,dv=dv)
 >>> ## Plot the broadening function
 >>> fig = plt.figure()

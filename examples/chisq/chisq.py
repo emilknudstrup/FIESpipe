@@ -2,8 +2,11 @@
 
 '''
 
-This example starts out similar to the one in :py:func:`FIESpipe.basic()`,
+This example starts out similar to the one in :ref:`basic`,
 but then finds the RV through :math:`\chi ^2` minimization.
+
+Normalization and outlier rejection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 >>> import FIESpipe as fp
@@ -66,6 +69,9 @@ but then finds the RV through :math:`\chi ^2` minimization.
 >>> ax.plot(sw[show],tf[show],'--',color='C7')
 
 .. image:: ../../../examples/chisq/norm_spec.png
+
+:math:`\chi ^2` minimization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 >>> ## Find the best RV
 >>> ## Through chi2 minimization

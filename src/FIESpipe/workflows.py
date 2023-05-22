@@ -820,9 +820,15 @@ def prepareSpectra(
 		tw, 
 		tf, 
 		pidx=4, 
-		drvs_coarse=np.arange(-200,200,1)
+		drvs_coarse=np.arange(-200,200,1),
+		outdir=None,
 		):
+	'''
+
+	:param outdir: Output directory. If not provided, the current directory is used.
+	:type outdir: str
 	
+	'''
 
 	prepped = {
 			'orders':norders,
@@ -895,5 +901,70 @@ def prepareSpectra(
 		prepped[file]['bjd'] = bjd
 		prepped[file]['rv'] = wavg_rv
 		prepped[file]['erv'] = wavg_err
+
+	## Create output path
+	name = 'prepped_spectra.pkl'
+	if outdir:
+		if not outdir.endswith('/'):
+			outdir = outdir+'/'
+		name = outdir + name
+	else:
+		out = ''
+		for ss in filenames[0].split('/')[:-1]: out += ss + '/'
+		name = out + '/' + name
+	## Dump prepped data to pickle
+	with open(name,'wb') as f:
+		pickle.dump(prepped,f)
+
+	return prepped
+
+def prepareThAr(
+		tharnames,
+		norders,
+		outdir=None,
+		):
+	'''Prepare ThAr spectra for template matching.
+
+	:param tharnames: List of ThAr filenames.
+	:type tharnames: list
+	:param norders: List of orders to use.
+	:type norders: list
+	:param outdir: Output directory. If not provided, the current directory is used.
+	:type outdir: str
+	
+	:return: Dictionary with the prepped spectra.
+	:rtype: dict
+	'''
+
+	prepped = {
+			'orders':norders,
+			'files':tharnames
+	}
+	for file in tharnames:
+		prepped[file] = {}
+	for ii, order in enumerate(norders):
+		for jj, file in enumerate(tharnames):
+			## Extract the data from the FITS file
+			wave, flux, _, hdr = extractFIES(file)
+			w = wave[order,:]
+			f = flux[order,:]
+
+			## Normalize the spectrum
+			nw, nf = normalize(w,f)
+			prepped[file][order] = [nw,nf]
+	
+	## Create output path
+	name = 'prepped_spectra_thar.pkl'
+	if outdir:
+		if not outdir.endswith('/'):
+			outdir = outdir+'/'
+		name = outdir + name
+	else:
+		out = ''
+		for ss in tharnames[0].split('/')[:-1]: out += ss + '/'
+		name = out + '/' + name
+	## Dump prepped data to pickle
+	with open(name,'wb') as f:
+		pickle.dump(prepped,f)
 
 	return prepped

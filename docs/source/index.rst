@@ -1,23 +1,38 @@
 .. FIESpipe documentation master file, created by
    sphinx-quickstart on Wed Apr  5 19:33:25 2023.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+
 
 Welcome to FIESpipe's documentation!
 ====================================
 
-A pipeline to extract radial velocities and activity indicators from FIES spectra.
+FIESpipe is a software package used to extract various data products from spectra acquired with the FIES spectrograph :cite:p:`Telting2014` at the Nordic Optical Telescope :cite:p:`Djupvik2010`. The package is intended to be used on the reduced "order-by-order" FIES spectra extracted from the `FIEStool <http://www.not.iac.es/instruments/fies/fiestool/>`_ data reduction software.
+
+There are a number of examples showing how to extract various quantities.
+
+
+Radial velocities (RVs) can be extracted through either:
+
+* the cross-correlation function (:ref:`basic`),
+* the broadening function (:ref:`broad`),
+* :math:`\chi^2` minimization (:ref:`chisq`),
+* or template matching (:ref:`tempmatch`)
+
+Furthermore, in :ref:`thar` an example on how to trace the (RV) drift of the spectrograph using the ThAr calibration spectra is given.
+
+Activity indicators, namely the Full Width Half Maximum (FWHM) and Bisector Inverse Slope (BIS), are calculated in :ref:`basic`, and the S-index is calculated in :ref:`sidx`.
+
+The examples show how to extract the quantities of interest through individual function calls, whereas the modules in :ref:`workflow` are collections of these function calls. Plots showing these products can be created using the functions in :ref:`evince`.
 
 .. image:: gallery/ccf.gif
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: Workflows
    
    workflows
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 2
    :caption: Examples
    
    examples/basic
@@ -25,9 +40,11 @@ A pipeline to extract radial velocities and activity indicators from FIES spectr
    examples/chisq
    examples/tempmatch
    examples/sidx
+   examples/thar
+
    
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: API
    
    API/extract
@@ -35,13 +52,13 @@ A pipeline to extract radial velocities and activity indicators from FIES spectr
    API/evince
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: Installation
    
    installation
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: References
 
    references

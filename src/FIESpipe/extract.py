@@ -21,7 +21,10 @@ import pickle
 def readPhoenix(filename, wl_min=3600,wl_max=8000):
 	'''Read Phoenix stellar template.
 
+	Extract template wavelength and flux from :cite:t:`Husser2013`.
 	
+	Avaliable `here <http://phoenix.astro.physik.uni-goettingen.de/>`__.
+
 	:param filename: Path to template.
 	:type filename: str
 
@@ -52,7 +55,6 @@ def readPhoenix(filename, wl_min=3600,wl_max=8000):
 	wave, flux = wave[keep], flux[keep]
 	flux /= np.amax(flux)
 
-	#flux /= np.median()
 	return wave, flux
 
 def readKurucz(filename):
@@ -60,7 +62,7 @@ def readKurucz(filename):
 
 	Extract template wavelength and flux from :cite:t:`Castelli2003`.
 	
-	Available `here <http://130.79.128.5/ftp/more/splib120/>`_.
+	Available `here <http://130.79.128.5/ftp/more/splib120/>`__.
 	
 	:param filename: Path to template.
 	:type filename: str
@@ -100,7 +102,9 @@ def extractFIES(filename):
 	'''
 	#Read in the FITS file
 	hdr = pyfits.getheader(filename)
-	flux = pyfits.getdata(filename)
+	
+	#flux = pyfits.getdata(filename)
+	
 	#Extract the flux
 	fts  = pyfits.open(filename)
 	flux = fts[0].data
@@ -110,9 +114,10 @@ def extractFIES(filename):
 		error = np.copy(flux[2,:,:])
 		flux = np.copy(flux[0,:,:])
 	else:
-		print('No flux errors available for {}'.format(filename))
 		error = np.ones(flux.shape)
-		print('Setting all errors to 1')
+		if not 'ThAr' in hdr['OBJECT']:
+			print('No flux errors available for {}'.format(filename))
+			print('Setting all errors to 1')
 	
 	# Figure out which header cards we want
 	cards = [x for x in sorted(hdr.keys()) if x.startswith('WAT2_')]
@@ -228,7 +233,7 @@ def getBarycorrs(filename, rvmeas):
 	## REMOVE
 	#rvs_cor[i] = rv_cor
 	#bjds[i] = bjd
-	
+
 	return bjd, rv_cor[0]-rvmeas
 
 # =============================================================================

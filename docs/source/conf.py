@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.abspath('./../../examples/broad'))
 sys.path.insert(0, os.path.abspath('./../../examples/chisq'))
 sys.path.insert(0, os.path.abspath('./../../examples/tempmatch'))
 sys.path.insert(0, os.path.abspath('./../../examples/sidx'))
+sys.path.insert(0, os.path.abspath('./../../examples/thar'))
 
 # -- Project information -----------------------------------------------------
 

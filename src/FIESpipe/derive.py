@@ -992,14 +992,21 @@ def rotBFfit(vel,bf,fitsize,res=67000,smooth=5.0,vsini=5.0,print_report=True):
 
 def makeSplines(
 		normalized,
+		filenames=None,
 		iter=1,
 		window_length=51,
 		k=3,
 		):
 	'''Make splines for template matching.
+
+	
+	Cubic B-splines created using :py:func:`scipy.interpolate.splrep` (`here <https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.splrep.html>`__)
+	and :py:func:`scipy.interpolate.Bspline` (`here <https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.BSpline.html#scipy.interpolate.BSpline>`__).
 	
 	:param normalized: Normalized spectra.
 	:type normalized: dict
+	:param filenames: Filenames for spectra. Default ``None``, in which case the filenames in ``normalized`` are used.
+	:type filenames: list, optional
 	:param iter: Number of iterations for outlier rejection through :py:func:`outSavGol` filter. Default 1.
 	:type iter: int, optional
 	:param window_length: Length of window for outlier rejection. Default 51.
@@ -1011,7 +1018,7 @@ def makeSplines(
 
 	'''
 	norders = normalized['orders']
-	filenames = normalized['files']
+	if filenames is None: filenames = normalized['files']
 
 	splines = {}
 	## Loop over orders
@@ -1147,6 +1154,10 @@ def coaddSpectra(
 	
 	Coadd spectra using the normalized spectra.
 
+	.. note::
+		The coadding here is done in a way that assumes that the spectra in the epoch
+		have the exact same wavelength solution. 
+	
 	:param filenames: List of filenames.
 	:type filenames: list
 	:param normalized: Normalized spectra.
@@ -1197,8 +1208,16 @@ def coaddSpectra(
 		## and append to the arrays
 		for jj, wl in enumerate(wlc):
 			idxs = np.where(wls == wl)[0]
-			#if len(idxs) > 1:
+			## Alternatively, it would be something along the line
+			## idxs = np.where(np.abs(wls-wl)<deltaWL)[0]
+			## where deltaWL is some threshold
+			## Could be set to be a fraction of the median spacing 
+			## between wavelength points in each of the spectra
+
 			if len(idxs):
+				## If the wavelength steps are not the same
+				## then it should be 
+				## fwls = np.append(fwls,np.mean(wls[idxs]))
 				fwls = np.append(fwls,wl)
 				ffls = np.append(ffls,np.mean(fls[idxs]))
 				## Propagate the errors
@@ -1278,6 +1297,202 @@ def splineRVs(
 	
 	wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
 	return wavg_rv, wavg_err
+
+# =============================================================================
+# ThAr
+# =============================================================================
+
+def tharSplines(
+		prepped,
+		norders=range(40,60)
+		):
+	'''Create splines for ThAr spectra.
+
+	Create splines for ThAr spectra using the prepped ThAr spectra.
+
+	:param prepped: Prepped ThAr spectra.
+	:type prepped: dict
+	:param norders: List of orders to create splines for. Default ``range(40,60)``.
+	:type norders: list, optional
+	
+	:return: Splines for each order.
+	:rtype: dict
+
+	'''
+	## Storage for splines
+	## and normalized ThAr spectra
+	splines = {}
+	tharnames = prepped['files']
+
+	for ii, order in enumerate(norders):
+		## Collect the wavelength and flux arrays
+		nwl = np.array([])
+		nfl = np.array([])
+		points = np.array([])
+		for jj, file in enumerate(tharnames):
+			# ## Extract the data from the FITS file
+			# wave, flux, _, hdr = fp.extractFIES(file)
+			# w = wave[order,:]
+			# f = flux[order,:]
+
+			# ## Normalize the spectrum
+			# nw, nf = fp.normalize(w,f)
+
+			## Extract prepped ThAr spectra
+			nw, nf = prepped[file][order]
+
+			nwl = np.append(nwl,nw)
+			nfl = np.append(nfl,nf)
+			points = np.append(points,len(nw))
+
+		## How many points are in the wavelength
+		## Number of knots
+		Nknots = int(np.median(points))
+
+		## Sort the arrays by wavelength
+		ss = np.argsort(nwl)
+		nwl, nfl = nwl[ss], nfl[ss]
+
+		## Knots for the spline
+		knots = np.linspace(nwl[np.argmin(nwl)],nwl[np.argmax(nwl)],Nknots)
+
+		## Get the coefficients for the spline
+		t, c, k = sci.splrep(nwl, nfl, k=3, t=knots[4:-4])
+		## ...and create the spline
+		spline = sci.BSpline(t, c, k, extrapolate=False)
+
+		splines[order] = [nwl,spline]
+
+	return splines
+
+def thaRVs(
+		prepped,
+		splines,
+		drvs=np.linspace(-0.5,0.5,40),
+		pidx=3
+		):
+	'''
+	Extract RVs from ThAr spectra.
+	
+	Extract RVs from ThAr spectra using template matching, where the template is created from a spline fit to the spectra.
+	
+	:param prepped: Prepped ThAr spectra.
+	:type prepped: dict
+	:param splines: Splines for each order.
+	:type splines: dict
+	:param drvs: RV grid. Default ``np.linspace(-0.5,0.5,40)`` (km/s).
+	:type drvs: array, optional
+	:param pidx: The indices around the peak of the :math:`\chi^2` polynomium. Default 3.
+	:type pidx: int, optional
+	
+	:return: The RVs extracted from the spectra.
+	:rtype: dict
+	'''
+	tharnames = prepped['files']
+	norders = prepped['orders']
+
+	## Dictionary to store the results
+	wrvs = {}
+	## Loop over files
+	for ii, file in enumerate(tharnames):
+		rvs = np.array([])
+		ervs = np.array([])
+		## Loop over orders
+		for jj, order in enumerate(norders):
+			## Collect the wavelength and spline
+			twl, spline = splines[order]
+			## Normalized ThAr
+			nwl, nfl = prepped[file][order]
+			chi2s = np.array([])
+			for drv in drvs:
+				## Shift the spectrum
+				wl_shift = nwl/(1.0 + drv*1e3/const.c.value)
+				mask = (wl_shift > min(twl)) & (wl_shift < max(twl))
+				
+				## Evaluate the spline at the shifted wavelength
+				ys = spline(wl_shift[mask])
+				## There are no errors on the ThAr spectra
+				## delivered by FIEStool
+				chi2 = np.sum((ys - nfl[mask])**2)
+				chi2s = np.append(chi2s,chi2)
+
+			## Find dip
+			peak = np.argmin(chi2s)
+
+			## Don't use the entire grid, only points close to the minimum
+			## For bad CCFs, there might be several valleys
+			## in most cases the "real" RV should be close to the middle of the grid
+			if (peak >= (len(chi2s) - pidx)) or (peak <= pidx):
+				peak = len(chi2s)//2
+			keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
+
+			pars = np.polyfit(drvs[keep],chi2s[keep],2)
+
+			## The minimum of the parabola is the best RV
+			rv = -pars[1]/(2*pars[0])
+			## The curvature is taking as the error.
+			erv = np.sqrt(2/pars[0])
+			if np.isfinite(rv) & np.isfinite(erv):
+				rvs = np.append(rvs,rv)
+				ervs = np.append(ervs,erv)
+		wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		bjd, _ = getBarycorrs(file,rvmeas=0.0)
+		wrvs[file] = [bjd,wavg_rv,wavg_err]
+
+	return wrvs
+
+def ThArcorr(
+		thimes,
+		tharvs,
+		times
+		):
+	'''Correct for the ThAr drift.
+
+	Here the RVs from the ThAr exposures are used to correct the drift in the RVs of the science exposures.
+	Here it is assumed that all science exposures are sandwiched between two ThAr exposures, schematically:
+
+	.. graphviz::
+
+		digraph acq {
+			rankdir="LR";
+			th1 -> sci1 -> th2;
+			th1 [shape=box, label="ThAr"];
+			th2 [shape=box, label="ThAr"];
+			sci1 [label="Science"];
+		}
+
+	, which is also when it only really makes sense to apply this correction.
+
+	:param thimes: BJDs for ThAr spectra.
+	:type thimes: array
+	:param tharvs: RVs for ThAr spectra.
+	:type tharvs: array
+	:param times: BJDs for science spectra.
+	:type times: array
+
+	:return: :math:`\Delta` RVs to be applied to RVs from science frames.
+	:rtype: array
+
+	'''
+
+	dvs = np.array([])
+	for ii, bjd in enumerate(times):
+		## Find the two closest ThAr exposures
+		close = np.argsort(np.abs(thimes - bjd))
+		if bjd < thimes[close[0]]:
+			after = close[0]
+			before = close[1]
+		else:
+			after = close[1]
+			before = close[0]
+		
+		## Fractional distance between the two closest ThAr exposures
+		frac = (bjd - thimes[before]) / (thimes[after] - thimes[before])
+		## The RV difference between the two closest ThAr exposures
+		dv = (tharvs[after] - tharvs[before])*frac
+		dvs = np.append(dvs,dv)
+
+	return dvs
 
 # =============================================================================
 # Deprecated

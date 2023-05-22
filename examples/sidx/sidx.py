@@ -12,7 +12,10 @@ where :math:`\\alpha` is a proportionality constant.
 .. note::
 
 	The S-index calculated here is not calibrated to the Mount Wilson S-index.
-	
+
+Identify orders
+^^^^^^^^^^^^^^^^^^^^^^^^
+
 .. code-block:: python
 
 	import FIESpipe as fp
@@ -95,6 +98,9 @@ where :math:`\\alpha` is a proportionality constant.
 			data['Vcontinuum']['orders'].append(ii)
 			arr = np.array([swl,f,e])
 			data['Vcontinuum']['order_{}'.format(ii)] = arr
+
+S-index calculation
+^^^^^^^^^^^^^^^^^^^^^^^^			
 
 .. code-block:: python
 

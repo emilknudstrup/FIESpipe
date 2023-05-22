@@ -24,6 +24,9 @@ The following shows two examples on how to do this:
 Step-by-step
 ---------------------
 
+Normalization and initial RVs
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 .. code-block:: python
 	
 	import FIESpipe as fp
@@ -178,6 +181,8 @@ Step-by-step
 .. image:: ../../../examples/tempmatch/spec_ini.png
 .. image:: ../../../examples/tempmatch/chi2_ini.png
 
+Spline creation - 1st iteration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
@@ -250,6 +255,9 @@ Step-by-step
 
 .. image:: ../../../examples/tempmatch/splines_ini.png
 
+RVs from splines - 1st iteration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 .. code-block:: python
 
 	## Now we'll use the splines as a template
@@ -320,6 +328,9 @@ Step-by-step
 		figchi.savefig('./chi2_second.png',bbox_inches='tight')
 
 .. image:: ../../../examples/tempmatch/chi2_second.png
+
+Spline creation - 2nd iteration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
@@ -414,8 +425,17 @@ Step-by-step
 
 .. image:: ../../../examples/tempmatch/spline_second.png
 
+Coadd epochs
+^^^^^^^^^^^^^^
+
+.. note::
+	The coadding here is done in a way that assumes that the spectra in the epoch
+	have the exact same wavelength solution.
+	A way to go about this would be to find the nearest neighbours for a given wavelength step.
+	See highlighted comments below.
 
 .. code-block:: python
+	:emphasize-lines: 67-71, 74-76
 
 	## We could now use the splines to get the RVs for each individual spectrum again,
 	## but this time we'll coadd the spectra from different epochs first
@@ -483,8 +503,16 @@ Step-by-step
 			## and append to the arrays
 			for jj, wl in enumerate(wlc):
 				idxs = np.where(wls == wl)[0]
-				#if len(idxs) > 1:
+				## Alternatively, it would be something along the line
+				## idxs = np.where(np.abs(wls-wl)<deltaWL)[0]
+				## where deltaWL is some threshold
+				## Could be set to be a fraction of the median spacing 
+				## between wavelength points in each of the spectra
+
 				if len(idxs):
+					## If the wavelength steps are not the same
+					## then it should be 
+					## fwls = np.append(fwls,np.mean(wls[idxs]))
 					fwls = np.append(fwls,wl)
 					ffls = np.append(ffls,np.mean(fls[idxs]))
 					## Propagate the errors
@@ -499,6 +527,8 @@ Step-by-step
 
 .. image:: ../../../examples/tempmatch/coadd.png
 
+Final RV extraction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 

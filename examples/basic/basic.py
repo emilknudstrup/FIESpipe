@@ -5,6 +5,10 @@ Illustrated here for a single order for a single spectrum.
 
 The star here is :math:`\\gamma` Cephei A, which is a slow rotator, so it has nice sharp lines.
 
+Normalization and outlier rejection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
 >>> import FIESpipe as fp
 >>> import matplotlib.pyplot as plt
 >>> import numpy as np
@@ -66,6 +70,8 @@ The star here is :math:`\\gamma` Cephei A, which is a slow rotator, so it has ni
 
 .. image:: ../../../examples/basic/norm_spec.png
 
+Cross-correlation function
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 >>> ## Resample the template and the wavelength grid of the spectrum
 >>> dv = fp.velRes(R=67000,s=2.1) # km/s, velocity resolution of the FIES spectrograph using fibre 4
