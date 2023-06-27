@@ -16,7 +16,7 @@ Therefore, we will also see how to :math:`\mathit{coadd}` three spectra to creat
 
 The following shows two examples on how to do this: 
 	* the first is a step-by-step example outlining most of the steps in great detail, 
-	* whereas the second example is a collection of calls to function doing the same thing as in the first example
+	* whereas the second example is a collection of calls to functions doing the same thing as in the first example
 
 .. note::
 	The code takes a bit of time to compile -- parallelize

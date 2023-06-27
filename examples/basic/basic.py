@@ -193,7 +193,7 @@ def basic(
 	ax.set_xlabel(r'$\rm \lambda \ (\AA)$')
 	ax.set_ylabel(r'$\rm F_{\lambda}$')
 	ax.plot(wl[idxs],nfl[idxs],'rx',zorder=5)
-	## Plot the cleaned spectrum
+	## Plot the cleansed spectrum
 	ax.errorbar(wlo,flo,yerr=eflo)
 
 	## Load Kurucz template
@@ -265,18 +265,11 @@ def basic(
 
 if __name__ == '__main__':
 	actual = basic()
-	desired = (
-		-44.37239055495838, #rv
-		0.1208350098322565, #erv
-		2459216.302969665, #bjd
-		-8.563316333212455, #bvc
-		12.36710888671423, #fw
-		0.14497382579032783, #efw
-		6.433613421862825, #co
-		0.13739220875952812, #eco
-		-0.06167927013553509, #bis
-		0.29880734861371294, #biserr
-		)
+	desired = (-44.37239055495838, 0.1208350098322565, 2459216.302969665, 
+		-8.563316333212455, 12.36710888671423, 0.14497382579032783, 
+		6.433613421862825, 0.13739220875952812, -0.06167927013553509, 0.02911326756100103)
+
+	#rv,erv,bjd,bvc,fw,efw,co,eco,bis,biserr = basic()
 
 	np.testing.assert_allclose(actual, desired, rtol=1e-2)
 	#np.testing.assert_allclose(results, expected, rtol=1e-3)

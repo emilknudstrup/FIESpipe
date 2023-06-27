@@ -69,6 +69,37 @@ def normalize(wl,fl,bl=np.array([]),poly=1,gauss=True,lower=0.5,upper=1.5):
 
 	return wl, nfl
 
+def contNormalize(wl,fl,bins=100,pdeg=10):
+	'''Continuum normalize spectrum.
+
+	Continuum normalization of observed spectrum.
+
+	Following :py:class:`hipparchus.EchelleSpectrum.continuum_normalize`:
+	https://github.com/bmorris3/hipparchus/blob/master/hipparchus/io.py#L180
+
+	:param wl: Observed wavelength
+	:type wl: array
+	:param fl: Observed raw flux
+	:type fl: array
+	:param bins: Number of bins for max filtering. Default 100.
+	:type bins: int, optional
+	:param pdeg: Degree of polynomial fit to normalize. Default 10.
+	:type pdeg: int, optional
+
+	:return: observed wavelength, observed normalized flux
+	:rtype: array, array
+	'''
+
+	## Normalize the spectrum
+	## max filtering
+	bs = scs.binned_statistic(wl-wl.mean(), fl, bins=bins,statistic='max')
+	bincenters = 0.5 * (bs.bin_edges[1:] + bs.bin_edges[:-1])
+	## Fit a polynomial to the continuum and divide it out
+	fit = np.polyval(np.polyfit(bincenters, bs.statistic, pdeg),wl-wl.mean())
+	nfl = fl/fit
+
+	return nfl
+
 def crm(wl,nfl,err=np.array([]),iters=1,q=[99.0,99.9,99.99]):
 	'''Cosmic ray mitigation.
 	
@@ -194,9 +225,13 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	Perform the cross correlation 
 
 	.. math:: 
-		\sigma^2 (v) = - \\left [ N  \\frac{C^{\prime \prime}(\hat{s})}{C(\hat{s})} \\frac{C^2(\hat{s})}{1 - C^2(\hat{s})} \\right ]^{-1} \, ,
+		\mathrm{CCF}(v) = \Sigma_l \Sigma_x f_x \Delta_{x,l}(v) \, ,
 
-	where :math:`C(\hat{s})` is the cross-correlation function, and :math:`C^{\prime \prime}(\hat{s})` the second derivative. :math:`N` is the number of bins.
+	Errors are calculated as in :cite:t:`Lafarga2020` (Eq. 7):
+
+	.. math:: 
+		\sigma_{\mathrm{CCF}}^2 (v) = \Sigma_l \Sigma_x \sigma_{f_x}^2 \Delta_{x,l} (v) \, ,
+
 	
 	Here using :py:func:`numpy.correlate`.
 	The arrays are trimmed to only include points over the RV range.
@@ -219,11 +254,11 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	'''
 
 	ccf = np.correlate(fl,tfl,mode=ccf_mode)
-	ccferr = np.correlate(fle,tfl,mode=ccf_mode)
+	ccferr = np.correlate(fle**2,tfl,mode=ccf_mode)
 	## normalize ccf
 	ccf = ccf/(np.std(fl) * np.std(tfl) * len(tfl))
 	## normalize errors from ccf
-	ccferr = ccferr/(np.std(fl) * np.std(tfl) * len(tfl))
+	ccferr = np.sqrt(ccferr/(np.std(fl) * np.std(tfl) * len(tfl)))
 	
 	## create velocity grid
 	rvs = np.arange(len(ccf)) - len(ccf)//2
@@ -241,6 +276,12 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	rvs = rvs*dv
 
 	return rvs, ccf, ccferr
+
+	# .. math:: 
+	# 	\sigma^2 (v) = - \\left [ N  \\frac{C^{\prime \prime}(\hat{s})}{C(\hat{s})} \\frac{C^2(\hat{s})}{1 - C^2(\hat{s})} \\right ]^{-1} \, ,
+
+	# where :math:`C(\hat{s})` is the cross-correlation function, and :math:`C^{\prime \prime}(\hat{s})` the second derivative. :math:`N` is the number of bins.
+	
 
 # def sumCCF(ccf):
 # 	'''Sum CCF.
@@ -870,7 +911,7 @@ def smoothBF(vel,bf,sigma=5.0):
 def rotBFfunc(vel,ampl,vrad,vsini,gwidth,const=0.,limbd=0.68):
 	'''Rotational profile. 
 
-	The rotational profile obtained by convolving the broadening function with a Gaussian following :cite:t:`Kaluzny2006`.
+	The rotational profile obtained by convolving the broadening function with a Gaussian following Eq. (2) in :cite:t:`Kaluzny2006`.
 
 	:param vel: Velocity in km/s.
 	:type vel: array
@@ -936,7 +977,11 @@ def rotBFres(params,vel,bf,wf):
 	res = bf - rotBFfunc(vel,ampl,vrad,vsini,gwidth,cons,limbd)
 	return res*wf
 
-def rotBFfit(vel,bf,fitsize,res=67000,smooth=5.0,vsini=5.0,print_report=True):
+def rotBFfit(vel,bf,fitsize,
+		res=67000,smooth=5.0,vsini=5.0,
+		vary_gwidth=True,
+		ldc=0.68,vary_ldc=False,
+		print_report=True):
 	'''Fit rotational profile.
 
 	:param vel: Velocity in km/s.
@@ -951,6 +996,12 @@ def rotBFfit(vel,bf,fitsize,res=67000,smooth=5.0,vsini=5.0,print_report=True):
 	:type vsini: float, optional
 	:param smooth: Smoothing factor. Default 5.0.
 	:type smooth: float, optional
+	:param vary_gwidth: Vary the Gaussian width? Default True.
+	:type vary_gwidth: bool, optional
+	:param ldc: Linear limb-darkening coefficient. Default 0.68.
+	:type ldc: float, optional
+	:param vary_ldc: Vary the linear limb-darkening coefficient? Default False.
+	:type vary_ldc: bool, optional
 	:param print_report: Print the ``lmfit`` report. Default ``True``
 	:type print_report: bool, optional 
 
@@ -971,10 +1022,10 @@ def rotBFfit(vel,bf,fitsize,res=67000,smooth=5.0,vsini=5.0,print_report=True):
 	params = lmfit.Parameters()
 	params.add('ampl1', value = bfgs[peak])
 	params.add('vrad1', value = vel[peak])
-	params.add('gwidth', value = gwidth,vary = True)
+	params.add('gwidth', value = gwidth, vary = vary_gwidth)
 	params.add('cons', value = 0.0)
 	params.add('vsini1', value = vsini)
-	params.add('limbd1', value = 0.68,vary = False)  
+	params.add('limbd1', value = ldc, vary = vary_ldc)  
 
 	fit = lmfit.minimize(rotBFres, params, args=(vel,bfgs,wf),xtol=1.e-8,ftol=1.e-8,max_nfev=500)
 	if print_report: print(lmfit.fit_report(fit, show_correl=False))

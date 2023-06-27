@@ -1,7 +1,7 @@
 #%%
 '''
 
-Example of how to use FIESpipe package on a faster rotating star.
+Example of how to use FIESpipe package on a faster rotating star -- HAT-P-49. 
 
 The approach is the same as in :ref:`basic` to begin with, 
 but eventually we use the broadening function to extract the line profile.
@@ -14,7 +14,7 @@ Normalization and outlier rejection
 >>> import matplotlib.pyplot as plt
 
 >>> ## Sort the FIES files into science and ThAr spectra
->>> spec = 'your_path/gamCep/'
+>>> spec = 'your_path/HAT-P-49/'
 >>> filenames, tharnames = fp.sortFIES(spec)
 >>> filenames.sort()
 
@@ -50,7 +50,7 @@ Normalization and outlier rejection
 >>> ax.set_xlabel(r'$\\rm \lambda (\AA)$')
 >>> ax.set_ylabel(r'$\\rm F_{\lambda}$')
 >>> ax.plot(wl[idxs],nfl[idxs],'rx',zorder=5)
->>> ## Plot the cleaned spectrum
+>>> ## Plot the cleansed spectrum
 >>> ax.errorbar(wlo,flo,yerr=eflo)
 
 >>> ## Load Kurucz template
@@ -103,7 +103,7 @@ Broadening function
 >>> ax.plot(vel,bf)
 
 >>> ## Smooth the broadening function
->>> sm = 5#smoothing factor
+>>> sm = 3#smoothing factor
 >>> bfs = fp.smoothBF(vel,bf,sigma=sm)
 
 >>> ## Plot the smoothed broadening function
@@ -111,7 +111,8 @@ Broadening function
 
 >>> ## Fit a rotation profile to the broadening function
 >>> ## fit in an interval around the systemic velocity of +/-20 km/s
->>> fit, model, bfs = fp.rotBFfit(vel,bfs,fitsize=20,smooth=sm,vsini=15)
+>>> ## Note the broadening function is smoothed by sm in this step
+>>> fit, model, bfs = fp.rotBFfit(vel,bf,fitsize=20,smooth=sm,vsini=15)
 >>> ## Plot the fit
 >>> ax.plot(vel,model)
 
@@ -144,7 +145,9 @@ def broad(
 	width = 15,
 	height = 6,
 	):
-	'''Broadening function example
+	'''Example using the broadening function.
+	
+	Used for testing.
 
 	:param fpath: path to the FIES files
 	:type fpath: str
@@ -240,7 +243,7 @@ def broad(
 	ax.plot(vel,bf)
 
 	## Smooth the broadening function
-	sm = 5#smoothing factor
+	sm = 3#smoothing factor
 	bfs = fp.smoothBF(vel,bf,sigma=sm)
 
 	## Plot the smoothed broadening function
@@ -248,7 +251,8 @@ def broad(
 
 	## Fit a rotation profile to the broadening function
 	## fit in an interval around the systemic velocity of +/-20 km/s
-	fit, model, bfs = fp.rotBFfit(vel,bfs,fitsize=20,smooth=sm,vsini=15)
+	## Note the broadening function is smoothed by sm in this step
+	fit, model, bfs = fp.rotBFfit(vel,bf,fitsize=20,smooth=sm,vsini=15)
 	## Plot the fit
 	ax.plot(vel,model)
 	if save: fig.savefig('./broadening_function.png',bbox_inches='tight')
@@ -273,4 +277,4 @@ def broad(
 	return rv, erv, bjd, bvc, amp, eamp, vsini, evsini
 
 if __name__ == '__main__':
-	rv, erv, bjd, bvc, amp, eamp, vsini, evsini = broad()
+	rv, erv, bjd, bvc, amp, eamp, vsini, evsini = broad(save=0)

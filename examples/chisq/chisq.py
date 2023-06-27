@@ -134,7 +134,7 @@ def chisq(
 	width = 15,
 	height = 6,
 	):
-	'''Basic example of the FIESpipe package.
+	'''Example of RV extraction through :math:`\chi^2` minimization.
 
 	Used for testing.
 

@@ -11,51 +11,203 @@ import astropy.io.fits as pyfits
 from astropy.time import Time
 from barycorrpy import get_BC_vel, utc_tdb
 from astropy import constants as const
-import pickle 
+from astropy.utils.data import download_file
+import pickle
+import os
 #from scipy.constants import speed_of_light
 
 # =============================================================================
 # Templates
 # =============================================================================
+def getPhoenix(teff,logg=4.5,feh=0.0,alpha=0.0,
+	url='ftp://phoenix.astro.physik.uni-goettingen.de/v2.0/HiResFITS/',
+	cache=True):
+	'''Download PHOENIX template
 
-def readPhoenix(filename, wl_min=3600,wl_max=8000):
-	'''Read Phoenix stellar template.
+	Download PHOENIX template using the effective temperature, surface gravity, metallicity and alpha enhancement values closest to the values provided.
+
+	Effective temperature range: 2300-7100 K in steps of 100 K, 7200-13200 K in steps of 200 K.
+	Surface gravity range: 0.0-6.0 in steps of 0.5 dex.
+	Metallicity values: -4.0, -3.0, -2.0, -1.0, 0.0, 0.2, 0.5 dex.
+	Alpha enhancement values: -0.2 to 1.2 in steps of 0.2 dex.
+
+	Similar to https://github.com/Hoeijmakers/StarRotator/blob/master/lib/stellar_spectrum.py#L231.
+
+	:param teff: Effective temperature in K.
+	:type teff: int
+
+	:param logg: Surface gravity. Default is 4.5.
+	:type logg: float
+
+	:param feh: [Fe/H]. Default is '0.0'.
+	:type feh: float
+
+	:param alpha: [alpha/Fe]. Default is '0.0'.
+	:type alpha: float
+
+	:param url: Path to the template files. Default is 'ftp://phoenix.astro.physik.uni-goettingen.de/v2.0/HiResFITS/'.
+	:type path: str
+
+	:param cache: Cache the downloaded file. Default is True.
+	:type cache: bool
+
+	:returns: File names of the downloaded templates.
+	:rtype: str
+	'''
+
+	## Effective temperature, Teff
+	teffs = np.arange(2300, 7100, 100,dtype=int)
+	teffs = np.append(teffs,np.arange(7200,13200,200,dtype=int))
+	teffq = teffs[np.argmin(np.abs(teffs-teff))]
+	if teffq < 10000:
+		teffq = '0{:d}'.format(teffq)
+	else:
+		teffq = '{:d}'.format(teffq)
+
+	## Surface gravity, logg
+	loggs = np.arange(0, 6.5, 0.5)
+	loggq = loggs[np.argmin(np.abs(loggs-logg))]
+
+	## Metallicity, [Fe/H]
+	fehs = np.arange(-4, -1, 1)
+	fehs = np.append(fehs,np.arange(-1.5, 1.5, 0.5))
+	fehq = fehs[np.argmin(np.abs(fehs-feh))]
+	if fehq > 0:
+		fehq = '+{:.1f}'.format(fehq)
+	else:
+		fehq = '-{:.1f}'.format(abs(fehq))
+
+	## Alpha enhancement, [alpha/Fe]
+	alphas = np.arange(-0.2, 1.4, 0.2)
+	alphaq = alphas[np.argmin(np.abs(alphas-alpha))]
+	if alphaq < 0:
+		alphaq = '.Alpha={:.2f}'.format(alphaq)
+	elif alphaq < 0:
+		alphaq = '.Alpha=+{:.1f}'.format(alphaq)
+	else:
+		alphaq = ''
+
+	## Name of wavelength file
+	waveurl = url+'WAVE_PHOENIX-ACES-AGSS-COND-2011.fits'
+
+	## Name of template file
+	specurl = url+'PHOENIX-ACES-AGSS-COND-2011/Z{:s}{:s}'.format(fehq,alphaq)+\
+		'/lte{:s}-{:.2f}{:s}{:s}'.format(teffq,loggq,fehq,alphaq)+'.PHOENIX-ACES-AGSS-COND-2011-HiRes.fits'
+
+	## Download files
+	spec = download_file(specurl, cache=cache)
+	wave = download_file(waveurl, cache=cache)
+	
+	return spec, wave
+
+def readPhoenix(specname, wavename='', wl_min=3600,wl_max=8000,to_air=True):
+	'''Read PHOENIX stellar template.
 
 	Extract template wavelength and flux from :cite:t:`Husser2013`.
 	
 	Avaliable `here <http://phoenix.astro.physik.uni-goettingen.de/>`__.
 
-	:param filename: Path to template.
-	:type filename: str
+	To go from vacuum to air wavelength, the function uses Eq. (9-10) from :cite:t:`Husser2013`.
 
-	:param wl_min: Minimum wavelength to keep.
+	:param specname: Path to template.
+	:type specname: str
+
+	:param wavename: Path to wavelength file. Default is ``''``, no wavelength.
+	:type wavename: str
+	
+	:param wl_min: Minimum wavelength to keep. Default is 3600 Å.
 	:type wl_min: float, optional
 
-	:param wl_max: Maximum wavelength to keep.
+	:param wl_max: Maximum wavelength to keep. Default is 8000 Å.
 	:type wl_max: float, optional
+
+	:param to_air: Convert wavelength to air. Default is True.
+	:type to_air: bool, optional
 
 	:return: template wavelength, template flux
 	:rtype: array, array
 
 	'''
-	fhdu = pyfits.open(filename)
+	fhdu = pyfits.open(specname)
 	flux = fhdu[0].data
 	fhdu.close()
+	try:
+		whdu = pyfits.open(wavename)
+		wave = whdu[0].data
+		whdu.close()
 
-	whdu = pyfits.open(os.path.dirname(filename)+'/'+'WAVE_PHOENIX-ACES-AGSS-COND-2011.fits')
-	wave = whdu[0].data
-	whdu.close()
+		if to_air:
+			## go from vacuum to air wavelength
+			sig2 = np.power(1e4/wave,2)
+			ff = 1.0 + 0.05792105/(238.0185-sig2) + 0.00167917/(57.362-sig2)
+			wave /= ff
+		
+		keep = (wave > wl_min) & (wave < wl_max)
+		wave, flux = wave[keep], flux[keep]
+		flux /= np.amax(flux)
 
-	#from Ciddor (1996) to go from vacuum to air wavelength
-	sig2 = (1e4/wave)**2.0
-	f = 1.0 + 0.05792105/(238.0185-sig2) + 0.00167917/(57.362-sig2)
-	wave /= f
+		return wave, flux
+	except FileNotFoundError:
+		print('No wavelength file found. Returning flux only.')
+		return flux
+
+def getKurucz(teff, logg=4.5, feh=0.0, alpha=0.0,
+	url ='http://130.79.128.5/ftp/more/splib120/',
+	cache=True
+	):
+	'''Download ATLAS9/Kurucz template
+
+	Download ATLAS9/Kurucz template using the effective temperature, surface gravity, metallicity and alpha enhancement values closest to the values provided.
+
+	Effective temperature range: 3500-7250 K in steps of 250 K.
+	Surface gravity range: 0.0-5.0 in steps of 0.5 dex.
+	Metallicity values: -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.2, 0.5 dex.
+	Alpha enhancement values: 0.0, 0.4 dex.
+
+	:param teff: Effective temperature.
+	:type teff: int
+	:param logg: Surface gravity. Default is 4.5.
+	:type logg: float
+	:param feh: [Fe/H]. Default is '0.0'.
+	:type feh: float
+	:param alpha: [alpha/Fe]. Default is '0.0'.
+	:type alpha: float
+	:param url: Path to the template files. Default is 'http://130.79.128.5/ftp/more/splib120/'.
+	:type path: str
+	:param cache: Cache the downloaded file. Default is True.
+	:type cache: bool
+
+	:returns: File name of the downloaded template.
+	:rtype: str
+
+	'''
+
+	## Effective temperature, Teff
+	teffs = np.arange(3500, 7250, 250,dtype=int)
+	teffq = teffs[np.argmin(np.abs(teffs-teff))]
+
+	## Surface gravity, logg
+	loggs = np.arange(0, 5.5, 0.5)
+	loggq = loggs[np.argmin(np.abs(loggs-logg))]*10
+	loggq = '{:02d}'.format(int(loggq))
+
+	## Metallicity, [Fe/H]
+	fehs = np.array([-2.5, -2.0, -1.5, -1.0, -0.5, 0.0,0.2,0.5])
+	fehq = fehs[np.argmin(np.abs(fehs-feh))]*10
+	if fehq < 0:
+		fehq = 'm{:02d}'.format(np.abs(int(fehq)))
+	else:
+		fehq = 'p{:02d}'.format(np.abs(int(fehq)))
 	
-	keep = (wave > wl_min) & (wave < wl_max)
-	wave, flux = wave[keep], flux[keep]
-	flux /= np.amax(flux)
+	## Alpha enhancement, [alpha/Fe]
+	alphas = np.array([0.0, 0.4])
+	alphaq = alphas[np.argmin(np.abs(alphas-alpha))]*10
+	alphaq = 'p{:02d}'.format(int(alphaq))
 
-	return wave, flux
+	## Download file
+	fname = url+'{:d}_{:s}_{:s}{:s}.ms.fits.gz'.format(teffq, loggq, fehq, alphaq)
+	file = download_file(fname, cache=True)
+	return file
 
 def readKurucz(filename):
 	'''Read Kurucz/ATLAS9 stellar template.
@@ -484,3 +636,62 @@ def readDataProduct(filename):
 		loaded_dict = pickle.load(f)
 	
 	return loaded_dict
+
+# =============================================================================
+# ESPRESSO
+# =============================================================================
+
+def extractESPRESSO(filename,to_air=True):
+	'''Extract ESPRESSO data.
+	
+	Extract header and flux from ESPRESSO S2D file.
+
+	.. note::
+		The wavelength is in vacuum, so it is converted to air following :cite:t:`Husser2013`.
+
+	:param filename: Path to ESPRESSO fits file.
+	:type filename: str
+
+	:param to_air: Convert wavelength to air. Default is True.
+	:type to_air: bool, optional
+
+	:return: wavelength, flux, error, header
+	:rtype: array, array, array, fits-header
+
+	'''
+
+	## Extract the data from the FITS file
+	fts = pyfits.open(filename)
+	## Header
+	hdr = fts[0].header
+	
+	## Extract the flux, error, wave
+	flux = fts[1].data
+	err = fts[2].data
+	wave = fts[4].data
+	fts.close()
+	orders = flux.shape[0]
+	
+	## Orders are repeated, 
+	## so only keep every second order
+	## which seems to have been filtered
+	wl = np.zeros((orders//2,flux.shape[1]))
+	fl = np.zeros((orders//2,flux.shape[1]))
+	el = np.zeros((orders//2,flux.shape[1]))
+	ii = 0
+	for order in range(1,orders+1,2):
+		w = wave[order,:]
+		## Wavelength is in vacuum, convert to air
+		if to_air:
+			## go from vacuum to air wavelength
+			sig2 = np.power(1e4/w,2)
+			ff = 1.0 + 0.05792105/(238.0185-sig2) + 0.00167917/(57.362-sig2)
+			w /= ff
+
+
+		wl[ii,:] = w
+		fl[ii,:] = flux[order,:]
+		el[ii,:] = err[order,:]
+		ii += 1
+	
+	return wl, fl, el, hdr

@@ -23,6 +23,8 @@ Activity indicators, namely the Full Width Half Maximum (FWHM) and Bisector Inve
 
 The examples show how to extract the quantities of interest through individual function calls, whereas the modules in :ref:`workflow` are collections of these function calls. Plots showing these products can be created using the functions in :ref:`evince`.
 
+In `templates <examples/temps.ipynb>`_ it is shown how to download and read/extract wavelength,flux from some template spectra.
+
 .. image:: gallery/ccf.gif
 
 .. toctree::
@@ -41,6 +43,7 @@ The examples show how to extract the quantities of interest through individual f
    examples/tempmatch
    examples/sidx
    examples/thar
+   examples/temps
 
    
 .. toctree::
@@ -58,10 +61,17 @@ The examples show how to extract the quantities of interest through individual f
    installation
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: References
 
    references
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Acknowledgements
+
+   ackn 
+
    
 Indices and tables
 ==================
