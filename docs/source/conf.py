@@ -67,7 +67,7 @@ html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
 
 # graphviz config
-graphviz_output_format = "svg"
+#graphviz_output_format = "svg"
 
 
 # Bibliography
