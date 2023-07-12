@@ -66,6 +66,10 @@ html_theme = 'sphinx_book_theme'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# graphviz config
+graphviz_output_format = "svg"
+
+
 # Bibliography
 bibtex_bibfiles = ['refs.bib']
 from dataclasses import dataclass, field
@@ -100,6 +104,7 @@ sphinxcontrib.bibtex.plugin.register_plugin(
 bibtex_reference_style = 'author_year_round'
 
 # Workaround to install and execute git-lfs on Read the Docs
+# Needed to display images and gif
 import os
 if not os.path.exists('./git-lfs'):
     os.system('wget https://github.com/git-lfs/git-lfs/releases/download/v2.7.1/git-lfs-linux-amd64-v2.7.1.tar.gz')
