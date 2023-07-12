@@ -7,3 +7,4 @@ graphviz
 pandoc
 jupyterlab
 ipympl
+astropy
