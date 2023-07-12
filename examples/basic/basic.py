@@ -33,7 +33,7 @@ Normalization and outlier rejection
 >>> ax.set_ylabel(r'$\\rm F_{\lambda}$')
 >>> ax.errorbar(w,f,yerr=e)
 
-.. image:: ../../examples/basic/raw_spec.png
+.. figure:: ../../../examples/basic/raw_spec.png
 
 >>> ## Normalize the spectrum
 >>> pdeg = 2 # Polynomial degree
