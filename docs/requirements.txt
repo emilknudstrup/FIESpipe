@@ -8,3 +8,6 @@ pandoc
 jupyterlab
 ipympl
 astropy
+barycorrpy
+scipy
+lmfit
