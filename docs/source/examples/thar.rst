@@ -29,7 +29,7 @@ Spline creation
 	## This time we'll use the ThAr files to 
 	## create a master template to monitor 
 	## the drift of the spectrograph
-	fig = plt.figure(figsize=(width,height))
+	fig = plt.figure()
 	ax = fig.add_subplot(111)
 	ax.set_xlabel(r'$\lambda \ (\AA)$')
 	ax.set_ylabel(r'$F_\lambda$')
@@ -101,7 +101,7 @@ Spline creation
 	## Dictionary to store the results
 	wrvs = {}
 	## Diagnostic plot
-	fig = plt.figure(figsize=(width,height))
+	fig = plt.figure()
 	ax = fig.add_subplot(111)
 	ax.set_xlabel('RV (km/s)')
 	ax.set_ylabel(r'$\chi^2$')
@@ -172,7 +172,7 @@ Spline creation
 .. code-block:: python
 
 	## This is how the RVs look
-	fig = plt.figure(figsize=(width,height))
+	fig = plt.figure()
 	ax = fig.add_subplot(111)
 	ax.set_xlabel(r'$\mathrm{BJD}_\mathrm{TDB}$')
 	ax.set_ylabel(r'RV (m/s)')

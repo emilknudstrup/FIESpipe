@@ -863,33 +863,38 @@ def prepareSpectra(
 			## Here only used to get the first guess for the RV
 			wlo, flo, eflo, idxs = crm(wl,nfl,nfle)
 
-			## Chi2 minimization for RVs
-			chi2s_c = chi2RV(drvs_coarse,wlo,flo,eflo,tw,tf)
-			#axchi.plot(drvs_coarse,chi2s_c,'--',color='C7')
+			try:
+				## Chi2 minimization for RVs
+				chi2s_c = chi2RV(drvs_coarse,wlo,flo,eflo,tw,tf)
+				#axchi.plot(drvs_coarse,chi2s_c,'--',color='C7')
 
-			## Find dip
-			peak_c = np.argmin(chi2s_c)
-			## Finer grid
-			drvs = np.arange(drvs_coarse[peak_c-10],drvs_coarse[peak_c+10],0.1)
-			chi2s = chi2RV(drvs,wlo,flo,eflo,tw,tf)
-			#axchi.plot(drvs,chi2s,'k-')
-			peak = np.argmin(chi2s)
+				## Find dip
+				peak_c = np.argmin(chi2s_c)
+				## Finer grid
+				drvs = np.arange(drvs_coarse[peak_c-10],drvs_coarse[peak_c+10],0.1)
+				chi2s = chi2RV(drvs,wlo,flo,eflo,tw,tf)
+				#axchi.plot(drvs,chi2s,'k-')
+				peak = np.argmin(chi2s)
 
-			## Don't use the entire grid, only points close to the minimum
-			## For bad orders, there might be several valleys
-			## in most cases the "real" RV should be close to the middle of the grid
-			keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
+				## Don't use the entire grid, only points close to the minimum
+				## For bad orders, there might be several valleys
+				## in most cases the "real" RV should be close to the middle of the grid
+				keep = (drvs < drvs[peak+pidx]) & (drvs > drvs[peak-pidx])
 
-			## Plot the minimum and the points to keep
-			#axchi.plot(drvs[keep],chi2s[keep],color='C0',lw=3,zorder=5)
+				## Plot the minimum and the points to keep
+				#axchi.plot(drvs[keep],chi2s[keep],color='C0',lw=3,zorder=5)
 
-			## Fit a parabola to the points to keep
-			pars = np.polyfit(drvs[keep],chi2s[keep],2)
+				## Fit a parabola to the points to keep
+				pars = np.polyfit(drvs[keep],chi2s[keep],2)
 
-			## The minimum of the parabola is the best RV
-			rv = -pars[1]/(2*pars[0])
-			## The curvature is taking as the error.
-			erv = np.sqrt(2/pars[0])
+				## The minimum of the parabola is the best RV
+				rv = -pars[1]/(2*pars[0])
+				## The curvature is taking as the error.
+				erv = np.sqrt(2/pars[0])
+			except ValueError:
+				print('Chi2 fit for order {} in file {} failed.\n Might have low SNR.'.format(order,file))
+				rv, erv = np.nan, np.nan
+
 			if np.isfinite(rv) & np.isfinite(erv):
 				rvs = np.append(rvs,rv)
 				ervs = np.append(ervs,erv)
