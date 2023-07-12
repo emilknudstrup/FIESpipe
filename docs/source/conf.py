@@ -23,8 +23,8 @@ sys.path.insert(0, os.path.abspath('./../../examples/thar'))
 # -- Project information -----------------------------------------------------
 
 project = 'FIESpipe'
-copyright = '2023, Emil Knudstrup, Rasmus Handberg, Hans Kjeldsen, Marcus Marcussen'
-author = 'Emil Knudstrup, Rasmus Handberg, Hans Kjeldsen, Marcus Marcussen'
+copyright = '2023, Emil Knudstrup, Marcus Marcussen, Hans Kjeldsen, Rasmus Handberg'
+author = 'Emil Knudstrup, Marcus Marcussen, Hans Kjeldsen, Rasmus Handberg'
 
 # The full version, including alpha/beta/rc tags
 release = '0.0.1'
