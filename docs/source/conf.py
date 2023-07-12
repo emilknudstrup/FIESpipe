@@ -97,10 +97,5 @@ sphinxcontrib.bibtex.plugin.register_plugin(
     'author_year_round', MyReferenceStyle)
     
    
-from sphinx.builders.html import StandaloneHTMLBuilder
-StandaloneHTMLBuilder.supported_image_types = [
-    'image/gif',
-    'image/png',
-]
-
 bibtex_reference_style = 'author_year_round'
+

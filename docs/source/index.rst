@@ -25,7 +25,7 @@ The examples show how to extract the quantities of interest through individual f
 
 In `templates <examples/temps.ipynb>`_ it is shown how to download and read/extract wavelength,flux from some template spectra.
 
-.. image:: gallery/ccf.gif
+.. image:: ../gallery/ccf.gif
 
 .. toctree::
    :maxdepth: 2
