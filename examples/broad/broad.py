@@ -89,7 +89,7 @@ Cross-correlation function
 
 .. image:: ../../../examples/broad/ccf.png
 
-Obviously the CCF is not very good, let's try the broadening function.
+This was the CCF, but let's try the broadening function.
 
 Broadening function
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

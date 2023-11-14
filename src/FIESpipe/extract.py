@@ -388,6 +388,33 @@ def getBarycorrs(filename, rvmeas):
 
 	return bjd, rv_cor[0]-rvmeas
 
+def getOrder(wl,wave,rv=0.):
+	'''Order at a given wavelength.
+	
+	Get the orders containing a given wavelength.
+	
+	:param wl: Wavelength at which to find the order.
+	:type wl: float
+
+	:param wave: Wavelength array.
+	:type wave: array
+
+	:param rv: Radial velocity of the star. Optional, default is 0.0 km/s.
+	:type rv: float
+
+	:returns: List of orders that contain the wavelength.
+	:rtype: list
+	'''
+	norders = wave.shape[0]
+	orders = []
+	for order in range(norders):
+		w = wave[order]
+		w *= (1.0 - rv*1e3/fp.const.c.value)
+		if (wl > min(w)) and (wl < max(w)):
+			orders.append(order)
+	
+	return orders
+
 # =============================================================================
 # Group by epochs
 # =============================================================================

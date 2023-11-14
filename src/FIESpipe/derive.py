@@ -173,9 +173,11 @@ def resample(wl,nfl,fle,twl,tfl,dv=1.0,edge=0.0):
 	keep = (twl >= lam[0]) & (twl <= lam[-1]) # only use resampled wl interval
 	twl, tfl = twl[keep], tfl[keep]
 	
+	flip_fl, flip_tfl = 1-nfl, 1-tfl
+
 	r_fle = np.interp(lam,wl,fle)
-	r_fl = np.interp(lam,wl,nfl)
-	r_tl = np.interp(lam,twl,tfl)
+	r_fl = np.interp(lam,wl,flip_fl)
+	r_tl = np.interp(lam,twl,flip_tfl)
 	return lam, r_fl, r_tl, r_fle
 
 # def resample(wl,nfl,twl,tfl,dv=1.0,edge=0.0):
@@ -274,7 +276,8 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	
 	## scale velocity grid
 	rvs = rvs*dv
-
+	# ccf = ccf/np.mean(ccf) - 1 # shift 'continuum' to zero
+	
 	return rvs, ccf, ccferr
 
 	# .. math:: 
