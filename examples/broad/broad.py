@@ -87,9 +87,9 @@ Cross-correlation function
 >>> ax.set_ylabel(r'$\\rm CCF$')
 >>> ax.errorbar(rvs,ccf,yerr=errs)
 
-.. image:: ../../../examples/broad/ccf.png
+.. image:: ../../../examples/broad/ccf_bfex.png
 
-This was the CCF, but let's try the broadening function.
+This was using the CCF, but let's try the broadening function.
 
 Broadening function
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -229,7 +229,7 @@ def broad(
 	ax.set_xlabel(r'$\rm RV (km\,s^{-1})$')
 	ax.set_ylabel(r'$\rm CCF$')
 	ax.errorbar(rvs,ccf,yerr=errs)
-	if save: fig.savefig('./ccf.png',bbox_inches='tight')
+	if save: fig.savefig('./ccf_bfex.png',bbox_inches='tight')
 
 
 	## Obviously the CCF is not very good, 
