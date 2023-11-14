@@ -277,4 +277,4 @@ def broad(
 	return rv, erv, bjd, bvc, amp, eamp, vsini, evsini
 
 if __name__ == '__main__':
-	rv, erv, bjd, bvc, amp, eamp, vsini, evsini = broad(save=0)
+	rv, erv, bjd, bvc, amp, eamp, vsini, evsini = broad(save=1)
