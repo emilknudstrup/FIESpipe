@@ -47,7 +47,7 @@ In `templates <examples/temps.ipynb>`_ it is shown how to download and read/extr
 
    
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: API
    
    API/extract

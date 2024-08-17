@@ -31,7 +31,7 @@ def getPhoenix(teff,logg=4.5,feh=0.0,alpha=0.0,
 	Metallicity values: -4.0, -3.0, -2.0, -1.0, 0.0, 0.2, 0.5 dex.
 	Alpha enhancement values: -0.2 to 1.2 in steps of 0.2 dex.
 
-	Similar to https://github.com/Hoeijmakers/StarRotator/blob/master/lib/stellar_spectrum.py#L231.
+	Similar to https://github.com/Hoeijmakers/StarRotator/blob/master/lib/stellar_spectrum.py#L1.
 
 	:param teff: Effective temperature in K.
 	:type teff: int
@@ -259,7 +259,7 @@ def extractFIES(filename):
 	
 	#Extract the flux
 	fts  = pyfits.open(filename)
-	flux = fts[0].data
+	flux = fts[0].data.astype(np.float64)
 	fts.close()
 	#Extract the error -- available for newer FIES data
 	if flux.ndim == 3:
@@ -617,7 +617,7 @@ def extractFIESold(filename,return_hdr=False,check_ThAr=True):
 
 	#Extract the flux
 	fts  = pyfits.open(filename)
-	data = fts[0].data
+	data = fts[0].data.astype(np.float64)
 	fts.close()
 	wave = data.copy()
 
