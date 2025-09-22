@@ -1343,7 +1343,7 @@ def splineRVs(
 
 		## The minimum of the parabola is the best RV
 		rv = -pars[1]/(2*pars[0])
-		## The curvature is taking as the error.
+		## The curvature is taken as the error.
 		erv = np.sqrt(2/pars[0])
 		if np.isfinite(rv) & np.isfinite(erv):
 			rvs = np.append(rvs,rv)
