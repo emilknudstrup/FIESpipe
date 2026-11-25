@@ -45,6 +45,7 @@ def normalize(wl,fl,bl=np.array([]),poly=1,gauss=True,lower=0.5,upper=1.5):
 	:param upper: Upper sigma limit to include in poly fit. Default 1.5.
 	:type upper: float, optional
 
+
 	:return: observed wavelength, observed normalized flux
 	:rtype: array, array
 	'''
@@ -54,7 +55,7 @@ def normalize(wl,fl,bl=np.array([]),poly=1,gauss=True,lower=0.5,upper=1.5):
 	
 	keep = np.isfinite(fl)
 	wl, fl = wl[keep], fl[keep] # exclude nans
-	
+
 	if poly is not None:
 		if gauss:
 			mu, sig = scs.norm.fit(fl)
@@ -100,47 +101,185 @@ def contNormalize(wl,fl,bins=100,pdeg=10):
 
 	return nfl
 
-def crm(wl,nfl,err=np.array([]),iters=1,q=[99.0,99.9,99.99]):
-	'''Cosmic ray mitigation.
+def excludeErrors(wave, flux, error, sigma=5):
+	'''Exclude large errors from the spectrum.
 	
-	Excludes flux over qth percentile.
-
-	.. note::
-		There might be a more sophisticated way of doing this.
-		Also, need to make sure it's working properly without flux errors.
-
-
-	:param wl: Observed wavelength.
-	:type wl: array 
-	:param nfl: Observed normalized flux.
-	:type: array
-	:param err: Observed flux error. Default ``numpy.array([])``. Leave empty, if no error available.
-	:type err: array, optional
-	:param iters: Iterations of removing upper q[iter] percentile. Default 1.
-	:type iters: int, optional
-	:param q: Percentiles. Default ``[99.0,99.9,99.99]``.
-	:type q: list, optional
+	This is done by calculating the median of the error and excluding points that are above a certain threshold (sigma times the median).
+	Also exclude negative errors, which can occur due to issues with the data reduction.
 	
-	:return: observed wavelength, observed normalized flux
-	:rtype: array, array
+	:param wave: Wavelength array
+	:type wave: numpy array
+
+	:param flux: Flux array
+	:type flux: numpy array
+
+	:param error: Error array
+	:type error: numpy array
+	
+	:param sigma: Threshold for excluding points (default is 5)
+	:type sigma: float
+
+	:return: Tuple of (wave, flux, error, mask) where mask is a boolean array indicating which points were excluded
+	:rtype: tuple
+
 	'''
-	assert iters <= len(q), 'Error: More iterations than specified percentiles.'
 
+	## Negative errors or flux
+	mask = (error < 0) | (flux < 0)
+
+	## Large errors
+	med = np.nanmedian(abs(error[~mask]))
+	mask |= abs(error) > sigma*med
+	mask = ~mask
+
+	return wave[mask], flux[mask], error[mask], ~mask
+
+# def crm(wl,nfl,err=np.array([]),iters=1,q=[99.0,99.9,99.99], insert_nans=False):
+# 	'''Cosmic ray mitigation.
+	
+# 	Excludes flux over qth percentile.
+
+# 	.. note::
+# 		There might be a more sophisticated way of doing this.
+# 		Also, need to make sure it's working properly without flux errors.
+
+
+# 	:param wl: Observed wavelength.
+# 	:type wl: array 
+# 	:param nfl: Observed normalized flux.
+# 	:type: array
+# 	:param err: Observed flux error. Default ``numpy.array([])``. Leave empty, if no error available.
+# 	:type err: array, optional
+# 	:param iters: Iterations of removing upper q[iter] percentile. Default 1.
+# 	:type iters: int, optional
+# 	:param q: Percentiles. Default ``[99.0,99.9,99.99]``.
+# 	:type q: list, optional
+# 	:param insert_nans: If True, insert NaNs for excluded points instead of removing them. Default False.
+	
+# 	:return: observed wavelength, observed normalized flux
+# 	:rtype: array, array
+# 	'''
+# 	assert iters <= len(q), 'Error: More iterations than specified percentiles.'
+
+# 	idxs = np.array([],dtype=int)
+# 	idxs = np.append(idxs,np.where(np.isnan(nfl))[0])
+
+# 	ret = True
+# 	if not len(err):
+# 		err = np.ones(len(wl))
+# 		ret = False
+
+	
+# 	for ii in range(iters):
+# 		cut = np.nanpercentile(nfl,q[ii]) # find upper percentile
+# 		cosmic = nfl > cut # cosmic ray mitigation
+# 		wl, nfl = wl[~cosmic], nfl[~cosmic]
+# 		err = err[~cosmic]
+# 		idxs = np.append(idxs,np.where(cosmic)[0])
+# 	if ret:
+# 		return wl, nfl, err, idxs
+# 	return wl, nfl, idxs
+
+
+# def crm(wl,fl,err=np.array([]),sigma=5,iters=1):
+# 	'''Cosmic ray mitigation.
+
+# 	Excludes flux values sigma above the mean.
+	
+
+# 	'''
+	
+# 	ret = True
+# 	if not len(err):
+# 		err = np.ones(len(wl))
+# 		ret = False
+
+# 	# idxs = np.array([],dtype=int)
+# 	# idxs = np.append(idxs,np.where(np.isnan(fl))[0])
+	
+# 	for ii in range(iters):
+# 		mu = np.nanmean(fl)
+# 		sig = np.nanstd(fl)
+# 		cosmic = fl > (mu + sigma*sig)
+# 		wl[cosmic], fl[cosmic], err[cosmic] = np.nan, np.nan, np.nan
+	
+# 	idxs = np.where(np.isnan(fl))[0]
+# 	if ret:
+# 		return wl[~np.isnan(fl)], fl[~np.isnan(fl)], err[~np.isnan(fl)], idxs
+# 	return wl[~np.isnan(fl)], fl[~np.isnan(fl)], idxs
+
+def crm(wl,fl,err=np.array([]),sigma=5,iters=1):
+	'''Cosmic ray mitigation.
+
+	Excludes flux values sigma above the mean.
+
+	:param wl: Wavelength array
+	:type wl: numpy array
+
+	:param fl: Flux array
+	:type fl: numpy array
+
+	:param err: Error array. Optional, defaults to an empty array. If not provided, the function will return only the wavelength and flux arrays without the error array.
+	:type err: numpy array
+	
+	:param sigma: Threshold for excluding points (default is 5)
+	:type sigma: float
+
+	:param iters: Number of iterations for the cosmic ray mitigation (default is 1)
+	:type iters: int
+
+	:return: Tuple of (wl, fl, err, mask) where mask is a boolean array indicating which points were excluded. If the error array is not provided, the function will return (wl, fl, mask).
+	:rtype: tuple
+	'''
+	
 	ret = True
 	if not len(err):
 		err = np.ones(len(wl))
 		ret = False
 
-	idxs = np.array([],dtype=int)
+	fl_copy = fl.copy()
 	for ii in range(iters):
-		cut = np.percentile(nfl,q[ii]) # find upper percentile
-		cosmic = nfl > cut # cosmic ray mitigation
-		wl, nfl = wl[~cosmic], nfl[~cosmic]
-		err = err[~cosmic]
-		idxs = np.append(idxs,np.where(cosmic)[0])
+		mu = np.nanmean(fl_copy)
+		sig = np.nanstd(fl_copy)
+		cosmic = np.where(fl_copy > (mu + sigma*sig))[0]
+		fl_copy[cosmic] = np.nan
+	
+	## Find indices of masked points (NaNs) to return
+	out = np.isnan(fl_copy)
+	idxs = np.isfinite(fl_copy)
 	if ret:
-		return wl, nfl, err, idxs
-	return wl, nfl, idxs
+		return wl[idxs], fl[idxs], err[idxs], out
+	return wl[idxs], fl[idxs], out
+
+
+def calcSNR(wave, flux, ferr, edge=0):
+	'''Calculate SNR.
+
+	Calculate SNR in a given wavelength range defined by edges.
+
+	:param wave: Wavelength array.
+	:type wave: array
+	
+	:param flux: Flux array.
+	:type flux: array
+
+	:param ferr: Flux error array.
+	:type ferr: array
+
+	:param edge: Skip edge of detector - low S/N - in Angstrom. Default 0.0 Å.
+	:type edge: float, optional
+
+	:return: SNR.
+	:rtype: float
+	'''
+
+	mask = (wave >= (wave[0]-edge)) & (wave <= (wave[-1]+edge))
+	signal = np.median(flux[mask])
+	noise = np.median(ferr[mask])
+	if noise == 0:
+		return np.inf
+	else:
+		return signal / noise
 
 def resample(wl,nfl,fle,twl,tfl,dv=1.0,edge=0.0):
 	'''Resample spectrum.
@@ -217,6 +356,40 @@ def resample(wl,nfl,fle,twl,tfl,dv=1.0,edge=0.0):
 # 	return lam, rf_fl, rf_tl
 
 
+def multiEpochClipping(flux_array, sigma_thresh=5):
+	'''Cross-epoch robust clipping.
+
+	Clip outliers in each pixel column across epochs based on a robust
+	median and MAD estimate, and replace clipped values with the per-pixel
+	median.
+
+	:param flux_array: Flux array with shape (n_epochs, n_pixels).
+	:type flux_array: array
+	:param sigma_thresh: Sigma threshold used for clipping. Default is 5.
+	:type sigma_thresh: float, optional
+
+	:return: Cleaned flux array and boolean mask where True indicates good values.
+	:rtype: array, array
+	'''
+
+	flux_array = np.asarray(flux_array)
+
+	median = np.median(flux_array, axis=0)
+	mad = np.median(np.abs(flux_array - median), axis=0)
+	sigma = 1.4826 * mad
+
+	# Avoid division by zero
+	sigma[sigma == 0] = np.nan
+
+	residuals = flux_array - median
+	mask = np.abs(residuals) < sigma_thresh * sigma
+
+	cleaned = flux_array.copy()
+	cleaned[~mask] = np.tile(median, (flux_array.shape[0], 1))[~mask]
+
+	return cleaned, mask
+
+
 # =============================================================================
 # Cross-correlation
 # =============================================================================
@@ -227,14 +400,24 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	Perform the cross correlation 
 
 	.. math:: 
-		\mathrm{CCF}(v) = \Sigma_l \Sigma_x f_x \Delta_{x,l}(v) \, ,
+		\mathrm{CCF}(v) = \Sigma_i f_i t_i (v) \, ,
 
-	Errors are calculated as in :cite:t:`Lafarga2020` (Eq. 7):
+	The CCF is normalized through
+
+	.. math::
+		a = \frac{\mathrm{CCF}(v)}{\sigma_f \sigma_t N} \, ,
+	
+	where :math:`\sigma_f` and :math:`\sigma_t` are the standard deviations of the flux and template, respectively, and :math:`N` is the number of bins.
+
+	The variance is calculated as:
 
 	.. math:: 
-		\sigma_{\mathrm{CCF}}^2 (v) = \Sigma_l \Sigma_x \sigma_{f_x}^2 \Delta_{x,l} (v) \, ,
+		\sigma_{\mathrm{CCF}}^2 (v) = \Sigma_i \sigma_i^2 [t_i (v)]^2 \, ,
 
-	
+	and the normalized error on the CCF is then
+	.. math::
+		\sigma_{\mathrm{CCF}} (v) = \sqrt{\Sigma_i \sigma_i^2 [t_i (v)]^2}/ a \, .
+
 	Here using :py:func:`numpy.correlate`.
 	The arrays are trimmed to only include points over the RV range.
 	
@@ -256,11 +439,12 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	'''
 
 	ccf = np.correlate(fl,tfl,mode=ccf_mode)
-	ccferr = np.correlate(fle**2,tfl,mode=ccf_mode)
+	ccferr = np.correlate(fle**2,tfl**2,mode=ccf_mode)
 	## normalize ccf
-	ccf = ccf/(np.std(fl) * np.std(tfl) * len(tfl))
+	norm = np.std(fl) * np.std(tfl) * len(tfl)
+	ccf = ccf/(norm)
 	## normalize errors from ccf
-	ccferr = np.sqrt(ccferr/(np.std(fl) * np.std(tfl) * len(tfl)))
+	ccferr = np.sqrt(ccferr)/(norm)
 	
 	## create velocity grid
 	rvs = np.arange(len(ccf)) - len(ccf)//2
@@ -286,6 +470,147 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	# where :math:`C(\hat{s})` is the cross-correlation function, and :math:`C^{\prime \prime}(\hat{s})` the second derivative. :math:`N` is the number of bins.
 	
 
+def getCCFBinMask(wl, nfl, fle, mask_wl, mask_w, rvs):
+	'''Pixel-space CCF.
+
+	Pixel-space CCF following Lafarga et al. (2020) Sects. 4.4-4.5.
+
+	Each mask line is a Dirac-delta mapped to a 1-pixel-wide bin expressed
+	in the *pixel coordinate* of the spectral order (Sect. 4.4).  For each
+	trial RV the Doppler-shifted mask-line wavelength is mapped to a
+	fractional pixel index via linear interpolation of the inverse
+	(wavelength->pixel) mapping; the +-0.5-pixel bin is then overlapped with
+	the 1-2 adjacent spectrum pixels and the normalised flux is linearly
+	interpolated at the centre of each overlap region in pixel space
+	(Sect. 4.4, last paragraph).
+
+	The CCF is in the *flux* (dip) convention: baseline ~ 1 for a
+	continuum-normalised spectrum, minimum at the stellar RV.
+
+	:param wl: Wavelength.
+	:type wl: array
+	:param nfl: Normalized flux.
+	:type nfl: array
+	:param fle: Flux errors.
+	:type fle: array
+	:param mask_wl: Mask line wavelengths.
+	:type mask_wl: array
+	:param mask_w: Mask line weights.
+	:type mask_w: array
+	:param rvs: Velocity grid.
+	:type rvs: array
+
+	:return: velocity grid (passed through), CCF for this order (flux dip form), photon-noise uncertainty on the CCF, number of mask lines that contributed, sum of weights of the contributing lines
+	:rtype: array, array, array, int, float
+	'''
+
+	c     = 299792.458  # km/s
+	nspec = len(wl)
+
+	# Integer pixel coordinates: pix[j] = j
+	pix = np.arange(nspec, dtype=float)
+
+	# Restrict to mask lines reachable in this order for any trial RV
+	max_dv   = np.max(np.abs(rvs))
+	in_range = (
+		(mask_wl * (1.0 + max_dv / c) >= wl[0]) &
+		(mask_wl * (1.0 - max_dv / c) <= wl[-1])
+	)
+	mwl = mask_wl[in_range]
+	mw  = mask_w[in_range]
+
+	if mwl.size == 0:
+		return rvs, np.zeros_like(rvs), np.zeros_like(rvs), 0, 0.0
+
+	nwl = len(mwl)
+	nrv = len(rvs)
+
+	# Doppler-shifted mask-line wavelengths: shape (nwl, nrv)
+	wmsh = mwl[:, None] * (1.0 + rvs[None, :] / c)
+
+	# Map shifted wavelengths to fractional pixel coordinates via linear
+	# interpolation of the inverse (wavelength->pixel) mapping.
+	pixmsh = np.interp(wmsh.ravel(), wl, pix).reshape(nwl, nrv)
+
+	# Mask-bin edges in pixel space: +/- 0.5 pixel (Sect. 4.4)
+	pm1 = pixmsh - 0.5   # left  edge, shape (nwl, nrv)
+	pm2 = pixmsh + 0.5   # right edge, shape (nwl, nrv)
+
+	# The (at most) two spectrum pixels whose +-0.5 bounds overlap the bin:
+	#   j_L = floor(pixmsh),  j_R = ceil(pixmsh)
+	# For non-integer pixmsh these are two adjacent pixels; for integer
+	# pixmsh they coincide (j_L == j_R -> single-pixel overlap).
+	j_L = np.clip(np.floor(pixmsh).astype(int), 0, nspec - 1)
+	j_R = np.clip(np.ceil (pixmsh).astype(int), 0, nspec - 1)
+
+	# --- Left-pixel contribution ---
+	ov_lo_L = np.maximum(j_L.astype(float) - 0.5, pm1)
+	ov_hi_L = np.minimum(j_L.astype(float) + 0.5, pm2)
+	ov_L    = np.maximum(ov_hi_L - ov_lo_L, 0.0)
+	pcen_L  = 0.5 * (ov_lo_L + ov_hi_L)
+
+	# --- Right-pixel contribution (zero when j_R == j_L) ---
+	same    = (j_L == j_R)
+	ov_lo_R = np.maximum(j_R.astype(float) - 0.5, pm1)
+	ov_hi_R = np.minimum(j_R.astype(float) + 0.5, pm2)
+	ov_R    = np.where(same, 0.0, np.maximum(ov_hi_R - ov_lo_R, 0.0))
+	pcen_R  = np.where(same, pcen_L, 0.5 * (ov_lo_R + ov_hi_R))
+
+	# Flux and error interpolated at each overlap centre (pixel space)
+	f_L = np.interp(pcen_L.ravel(), pix, nfl).reshape(nwl, nrv)
+	e_L = np.interp(pcen_L.ravel(), pix, fle).reshape(nwl, nrv)
+	f_R = np.interp(pcen_R.ravel(), pix, nfl).reshape(nwl, nrv)
+	e_R = np.interp(pcen_R.ravel(), pix, fle).reshape(nwl, nrv)
+
+	# Weighted contributions summed over mask lines -> CCF and its variance
+	mw2d       = mw[:, None]                                     # (nwl, 1)
+	contrib_f  = mw2d * (ov_L * f_L + ov_R * f_R)               # (nwl, nrv)
+	contrib_e2 = mw2d**2 * (ov_L**2 * e_L**2 + ov_R**2 * e_R**2)
+
+	ccf    = np.sum(contrib_f,          axis=0)                  # (nrv,)
+	ccferr = np.sqrt(np.sum(contrib_e2, axis=0))
+
+	return rvs, ccf, ccferr, nwl, float(np.sum(mw))
+
+def getRVuncertainty(rvs, ccf, ccferr):
+	'''Photon-noise limited RV uncertainty.
+
+	Estimate the RV uncertainty from the CCF profile following Eqs. (9)-(10)
+	in :cite:t:`Lafarga2020` (see also :cite:t:`Bouchy2001`).
+
+	At each velocity point:
+
+	.. math::
+		\sigma_v(v) = \sigma_{\mathrm{CCF}}(v)\left|\frac{\mathrm{dCCF}}{\mathrm{d}v}\right|^{-1}
+
+	and the final uncertainty is:
+
+	.. math::
+		\sigma_{\mathrm{RV}} = \left(\sum_v \frac{1}{\sigma_v(v)^2}\right)^{-1/2}
+
+	:param rvs: Velocity grid in km/s.
+	:type rvs: array
+	:param ccf: Cross-correlation function values.
+	:type ccf: array
+	:param ccferr: Uncertainty on the CCF values.
+	:type ccferr: array
+
+	:return: Photon-noise limited RV uncertainty.
+	:rtype: float
+
+	.. note::
+		For realistic uncertainties, the CCF sampling should be close to the
+		pixel velocity scale (Sect. 3.5 in :cite:t:`Lafarga2020`).
+	'''
+	dccf_dv = np.gradient(ccf, rvs)  # d(CCF)/d(v) in units of 1/(km/s)
+
+	with np.errstate(divide='ignore', invalid='ignore'):
+		# Information weight at each point: W(v) = (dCCF/dv)^2 / sigma_CCF^2
+		W = np.where(ccferr > 0, dccf_dv**2 / ccferr**2, 0.0)
+
+	sigma_rv = 1.0 / np.sqrt(np.sum(W)) if np.sum(W) > 0 else np.inf
+	return sigma_rv
+
 # def sumCCF(ccf):
 # 	'''Sum CCF.
 	
@@ -310,6 +635,114 @@ def getCCF(fl,tfl,fle,dv=1.0,rvr=401,ccf_mode='full'):
 	
 
 # 	return ccfsum
+
+def weightedCoaddCCF(order_ccfs, order_ccferrs, erv_orders, orders):
+	'''Inverse-variance weighted co-addition of per-order CCFs.
+
+	Co-adds CCFs from individual orders weighting each by the per-order
+	photon-noise RV precision (:math:`w_i = 1/\\sigma_{\\rm RV,i}^2`).
+	This suppresses the contribution of noisy or sparsely-covered orders,
+	mirroring the inverse-variance weighting used in template-matching
+	(e.g. SERVAL, :cite:t:`Zechmeister2018`).
+
+	The propagated CCF uncertainty is:
+
+	.. math::
+		\\sigma_C(v) = \\frac{\\sqrt{\\sum_i w_i^2 \\, \\sigma_{C_i}(v)^2}}{\\sum_i w_i}
+
+	:param order_ccfs: Per-order CCF values, shape ``(norders_total, nrv)``.
+	:type order_ccfs: numpy.ndarray
+	:param order_ccferrs: Per-order CCF uncertainties, shape ``(norders_total, nrv)``.
+	:type order_ccferrs: numpy.ndarray
+	:param erv_orders: Per-order photon-noise RV uncertainty (km/s), length ``norders_total``.
+	:type erv_orders: numpy.ndarray
+	:param orders: Indices of orders to include in the co-addition.
+	:type orders: array-like
+
+	:return: Co-added CCF, propagated CCF uncertainty.
+	:rtype: tuple of numpy.ndarray
+	'''
+	nrv       = order_ccfs.shape[1]
+	ccf_sum   = np.zeros(nrv)
+	ccferr_sq = np.zeros(nrv)
+	wsum      = 0.0
+
+	for i in orders:
+		erv_i = erv_orders[i]
+		if not (np.isfinite(erv_i) and erv_i > 0):
+			continue
+		w          = 1.0 / erv_i**2
+		ccf_sum   += w * order_ccfs[i]
+		ccferr_sq += w**2 * order_ccferrs[i]**2
+		wsum      += w
+
+	if wsum == 0.0:
+		return np.zeros(nrv), np.zeros(nrv)
+
+	return ccf_sum / wsum, np.sqrt(ccferr_sq) / wsum
+
+def coaddCCFs(order_ccfs, order_ccferrs, erv_array=None, orders=None, order_wsums=None, order_nlines=None, coadd_mode='snr_weighted'):
+	''' Co-add CCFs from individual orders.
+
+		Toggle between co-addition modes:
+			'simple'       : plain sum of high-SNR order CCFs with Lafarga+2020 normalisation (fixed).
+			'snr_weighted' : inverse-variance weighted co-addition using per-order photon-noise RV precision.
+
+	:param order_ccfs: Per-order CCF values, shape ``(norders_total, nrv)``.
+	:type order_ccfs: numpy.ndarray
+	:param order_ccferrs: Per-order CCF uncertainties, shape ``(norders_total, nrv)``.
+	:type order_ccferrs: numpy.ndarray
+	:param erv_array: Optional. Per-order photon-noise RV uncertainty (km/s), length ``norders_total``.
+	:type erv_array: numpy.ndarray, optional
+	:param orders: Optional. Indices of orders to include in the co-addition.
+	:type orders: array-like, optional
+	:param order_wsums: Optional. Per-order sum of weights (for 'simple' mode). Default None.
+	:type order_wsums: numpy.ndarray, optional
+	:param order_nlines: Optional. Per-order number of contributing lines (for 'simple' mode). Default None.
+	:type order_nlines: numpy.ndarray, optional
+	:param coadd_mode: Co-addition mode. Options are 'simple' or 'snr_weighted'. Default is 'snr_weighted'.
+	:type coadd_mode: str, optional
+
+	:return: Co-added CCF, propagated CCF uncertainty.
+	:rtype: tuple of numpy.ndarray
+	'''
+	assert coadd_mode in ['simple', 'snr_weighted'], f"Unknown coadd_mode '{coadd_mode}'. Use 'simple' or 'snr_weighted'."
+	if coadd_mode == 'simple':
+		## Assert that order_wsums and order_nlines are provided
+		if order_wsums is None or order_nlines is None:
+			raise ValueError("For 'simple' co-addition mode, order_wsums and order_nlines must be provided.")
+
+		## Plain sum of high-SNR order CCFs.
+		## Normalisation follows Lafarga+2020 Sect. 4.5, but restricted to
+		## the selected orders so that avg_weight is self-consistent.
+		total_weight = np.sum(order_wsums[orders])
+		total_nlines = np.sum(order_nlines[orders])
+
+		ccfs    = np.zeros_like(order_ccfs[0])
+		ccferrs = np.zeros_like(order_ccferrs[0])
+		for i in orders:
+			ccfs    += order_ccfs[i]
+			ccferrs += order_ccferrs[i]**2
+		ccferrs = np.sqrt(ccferrs)
+		if total_nlines > 0:
+			avg_weight = total_weight / total_nlines
+			ccfs    /= avg_weight
+			ccferrs /= avg_weight
+
+	elif coadd_mode == 'snr_weighted':
+		## Assert that erv_array and norders is provided
+		if erv_array is None or orders is None:
+			raise ValueError("For 'snr_weighted' co-addition mode, erv_array and orders must be provided.")
+		## Inverse-variance weighted co-addition using per-order photon-noise
+		## RV precision.  The absolute CCF scale is set by the weighting and
+		## is not comparable to the Lafarga normalisation, but the Gaussian
+		## fit for RV, FWHM and contrast is unaffected by the overall scale.
+		ccfs, ccferrs = weightedCoaddCCF(order_ccfs, order_ccferrs, erv_array, orders)
+
+	else:
+		raise ValueError(f"Unknown coadd_mode '{coadd_mode}'. Use 'simple' or 'snr_weighted'.")
+
+	return ccfs, ccferrs
 
 def getxError(rv, ccf, ccferr):
 	'''RV error from CCF profile.
@@ -510,7 +943,9 @@ def fitGauss(xx,yy,yerr=None,guess=None,flipped=False):
 		guess = [amp,mu,sig,off]
 	
 	## fit Gaussian
-	gau_par, pcov = curve_fit(Gauss,xx,yy,p0=guess,sigma=yerr)
+	## maxfev raised from the scipy default of 1000, since the default is
+	## sometimes too low for noisy/shallow CCFs to converge
+	gau_par, pcov = curve_fit(Gauss,xx,yy,p0=guess,sigma=yerr,maxfev=5000)
 
 	return gau_par, pcov
 
@@ -540,7 +975,18 @@ def getRV(vel,ccf,ccferr=None,guess=None,flipped=False,return_pars=False):
 
 	'''
 
-	gau_par, pcov = fitGauss(vel,ccf,yerr=ccferr,guess=guess,flipped=flipped)
+	try:
+		gau_par, pcov = fitGauss(vel,ccf,yerr=ccferr,guess=guess,flipped=flipped)
+	except RuntimeError:
+		## Gaussian fit did not converge (e.g. noisy/shallow CCF).
+		## Return NaNs with the same shapes/signature as a successful fit,
+		## so callers can treat this the same way as any other bad epoch/order
+		## (e.g. with np.isfinite checks) instead of crashing.
+		nan_pars = np.full(4, np.nan)
+		nan_pcov = np.full((4,4), np.nan)
+		if return_pars:
+			return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, nan_pars, nan_pcov
+		return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 	
 	## mu
 	rv = gau_par[1]
@@ -586,7 +1032,7 @@ def getBIS(x,y,xerr=np.array([]),
 	bytopmin_percent to bytopmax_percent and the bottom part in the interval (in percent)
 	bybotmin_percent to bybotmax_percent of the CCF. 
 
-	Implemented identical to :py:func:`raccoon.ccf.computebisector_biserr`:
+	Implemented identically to :py:func:`raccoon.ccf.computebisector_biserr`:
 	https://github.com/mlafarga/raccoon/blob/master/raccoon/ccf.py#L332
 
 
@@ -702,6 +1148,30 @@ def getBIS(x,y,xerr=np.array([]),
 	
 	return bis, bx, by
 
+def computeBIS(rvs_epoch, ccfs, ccferrs):
+	'''Bisector inverse slope from the co-added CCF.
+
+	Wrapper around :py:func:`fp.getBIS` that handles the dip (absorption-line)
+	convention of :py:func:`fp.getCCFBinMask` by flipping the CCF, and
+	derives per-point velocity uncertainties from the CCF noise and its
+	gradient for error propagation.
+
+	:param rvs_epoch: Velocity grid in km/s.
+	:type rvs_epoch: numpy.ndarray
+	:param ccfs: Co-added CCF (dip convention; minimum at stellar RV).
+	:type ccfs: numpy.ndarray
+	:param ccferrs: Photon-noise uncertainty on the co-added CCF.
+	:type ccferrs: numpy.ndarray
+
+	:return: Bisector inverse slope (km/s), BIS uncertainty (km/s).
+	:rtype: tuple of float
+	'''
+	dccf_dv = np.gradient(ccfs, rvs_epoch)
+	with np.errstate(divide='ignore', invalid='ignore'):
+		xerr_bis = np.where(np.abs(dccf_dv) > 0, ccferrs / np.abs(dccf_dv), np.inf)
+	return getBIS(rvs_epoch, -ccfs, xerr=xerr_bis)
+
+
 # =============================================================================
 # S-index 
 # =============================================================================
@@ -741,7 +1211,7 @@ def triangle(vals,mode,lower,upper):
 # =============================================================================
 # Statistics
 # =============================================================================
-def weightedMean(vals,errs,out=True,sigma=5.0):
+def weightedMean(vals,errs,error_estimation='Zechmeister2018',out='mad',sigma=5.0):
 	'''Calculate weighted mean and error.
 
 	As in Eqs. (14) and (15) in :cite:t:`Zechmeister2018`:
@@ -754,22 +1224,34 @@ def weightedMean(vals,errs,out=True,sigma=5.0):
 	
 	where :math:`w_o = 1/\\sigma_o^2` and :math:`v_o` is the RV for order :math:`o` and :math:`\sigma_o` is the error.
 
+	.. note::
+		- When using the error estimation from :cite:t:`Zechmeister2018`, the error is inflated by the chi-squared of the fit, as in Eq. (14) alternatively to the formal error in Eq. (15) in :cite:t:`Zechmeister2018`. The former is more conservative, but the latter might be more appropriate when the errors are well estimated. 
+
+
 	:param vals: Values.
 	:type vals: array
 	:param errs: Errors.
 	:type errs: array
-	:param out: Outlier rejection? Default is True.
-	:type out: bool
-	:param sigma: Sigma for outlier rejection. Default is 5.0.
+	:param error_estimation: Method for error estimation. Options are 'Zechmeister2018' or 'formal'. Default is 'Zechmeister2018'.
+	:type error_estimation: str
+	:param out: Outlier rejection method. Options are 'mad' or 'gauss'. Default is 'mad'.
+	:type out: str or False
+	:param sigma: Sigma for outlier rejection in case of 'gauss'. Default is 5.0.
 	:type sigma: float
 	
 	:return: Weighted mean, weighted error.
 	:rtype: float, float
 	
 	'''
-	
+	assert error_estimation in ['Zechmeister2018','formal'], 'Error: error_estimation must be one of "Zechmeister2018" or "formal".'
+	assert out in ['mad','gauss', False], 'Error: out must be one of "mad", "gauss", or False.'
+
 	## reject outliers
-	if out:
+	if out == 'mad':
+		med = np.median(vals)
+		mad = 1.4826*np.median(np.abs(vals - med))
+		good = np.abs(vals - med) < 3*mad
+	elif out == 'gauss':
 		mu, sig = scs.norm.fit(vals)
 		sig *= sigma
 		keep = (vals < (mu + sig)) & (vals > (mu - sig))
@@ -783,13 +1265,14 @@ def weightedMean(vals,errs,out=True,sigma=5.0):
 	mean = np.sum(weights*vals)/np.sum(weights)
 	
 	## calculate the weighted error
-	term1 = 1./np.sum(1./errs**2)
-	term2 = 1./(len(vals)-1.0)
-	term3 = np.sum((vals-mean)**2/errs**2)
-	err = np.sqrt(term1*term2*term3)
+	if error_estimation == 'Zechmeister2018':
+		term1 = 1./np.sum(1./errs**2)
+		term2 = 1./(len(vals)-1.0)
+		term3 = np.sum((vals-mean)**2/errs**2)
+		err = np.sqrt(term1*term2*term3)
+	elif error_estimation == 'formal':
+		err = np.sqrt(1.0 / np.sum(weights))
 
-	if out:
-		return mean, err, mu, sig
 
 	return mean, err
 
@@ -855,9 +1338,8 @@ def getBF(fl,tfl,rvr=401,dv=1):
 	:rtype: array, array 
 
 	'''
-	bn = rvr/dv
-	if bn % 2 != 1: bn += 1
-	bn = int(bn) # Width (number of elements) of the broadening function. Must be odd.
+	bn = int(np.ceil(rvr/dv))
+	if bn % 2 == 0: bn += 1 # Width (number of elements) of the broadening function. Must be odd.
 	bn_arr = np.arange(-int(bn/2), int(bn/2+1), dtype=float)
 	vel = -bn_arr*dv
 
@@ -1194,7 +1676,8 @@ def matchRVs(
 			if np.isfinite(rv) & np.isfinite(erv):
 				rvs = np.append(rvs,rv)
 				ervs = np.append(ervs,erv)
-		wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		# wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		wavg_rv, wavg_err = weightedMean(rvs,ervs,out='mad')
 		bjd, bvc = getBarycorrs(file,wavg_rv)
 		wrvs[file] = [bjd,wavg_rv,wavg_err,bvc]
 
@@ -1349,7 +1832,8 @@ def splineRVs(
 			rvs = np.append(rvs,rv)
 			ervs = np.append(ervs,erv)
 	
-	wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+	wavg_rv, wavg_err = weightedMean(rvs,ervs,out='mad')
+	# wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
 	return wavg_rv, wavg_err
 
 # =============================================================================
@@ -1489,7 +1973,8 @@ def thaRVs(
 			if np.isfinite(rv) & np.isfinite(erv):
 				rvs = np.append(rvs,rv)
 				ervs = np.append(ervs,erv)
-		wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		# wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		wavg_rv, wavg_err  = weightedMean(rvs,ervs,out='mad')
 		bjd, _ = getBarycorrs(file,rvmeas=0.0)
 		wrvs[file] = [bjd,wavg_rv,wavg_err]
 

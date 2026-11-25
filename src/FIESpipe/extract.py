@@ -5,15 +5,20 @@ Collection of modules used to extract data from fits files from,
 e.g., model atmospheres from Kurucz to stellar spectra from FIES.
 
 """
+from cmath import phase
 import glob
 import numpy as np
 import astropy.io.fits as pyfits
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 from barycorrpy import get_BC_vel, utc_tdb
 from astropy import constants as const
+from astropy import units as u
 from astropy.utils.data import download_file
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+from astropy.coordinates import get_sun, get_body
 import pickle
 import os
+from scipy.interpolate import interp1d
 #from scipy.constants import speed_of_light
 
 # =============================================================================
@@ -238,6 +243,115 @@ def readKurucz(filename):
 # FIES 
 # =============================================================================
 
+
+def obsDate(hdr,hyphen=False):
+	'''Observation date.
+
+	Extract the observation date from the header, and return it as a string in the format YYYYMMDD.
+	
+	:param hdr: FITS header.
+	:type hdr: astropy.io.fits.Header
+	:param hyphen: Whether to include hyphens in the date string. Default is False (YYYYMMDD). If True, the format will be YYYY-MM-DD.
+	:type hyphen: bool, optional
+	
+	:return: Observation date in the format YYYYMMDD or YYYY-MM-DD.
+	:rtype: str
+	
+	'''
+	time_half_day_before = Time(Time(hdr['DATE-AVG']).jd - 0.5, format='jd')
+	if hyphen:
+		filename = f"{time_half_day_before.strftime('%Y-%m-%d')}"
+	else:
+		filename = f"{time_half_day_before.strftime('%Y%m%d')}"
+	return filename
+
+
+def findExpmeterFile(tpath, hdr):
+	'''Find expmeter file.
+	Find the expmeter file corresponding to the observation date in the header. The expmeter file is expected to be named as YYYYMMDD_NOT_fies_expmeter.csv, where YYYYMMDD is the observation date.
+
+	:param tpath: Path to telemetry files.
+	:type tpath: str
+
+	:param hdr: FITS header.
+	:type hdr: astropy.io.fits.Header
+
+	:return: Path to expmeter file, or None if not found.
+	:rtype: str or None
+	
+	'''
+
+	filename = f"{obsDate(hdr)}_NOT_fies_expmeter.csv"
+	full_path = os.path.join(tpath, filename)
+	if os.path.exists(full_path):
+		# print(f"Found expmeter file: {full_path}")
+		return full_path
+	else:
+		print("No expmeter file found.")
+		print(f"Expected file name: {filename}")
+		print(f"Expected file path: {full_path}")
+		return None
+
+def fluxWeightedTime(hdr, expmeter_df):
+	'''Flux-weighted mean time of exposure.
+
+	Calculate the flux-weighted mean time of the exposure using the cumulative counts from the expmeter file and the exposure start time from the header.
+
+	:param hdr: FITS header.
+	:type hdr: astropy.io.fits.Header
+	
+	:param expmeter_df: DataFrame containing the expmeter data, with columns 'DateTimeUT' and 'Exposure Meter Counts'.
+	:type expmeter_df: pandas.DataFrame
+	
+	:return: Flux-weighted mean time of the exposure as an astropy Time object.
+	:rtype: astropy.time.Time
+	
+	'''
+
+	expmeter_times_iso = np.array(expmeter_df['DateTimeUT'].str.strip().str.replace(" ", "T", regex=False))
+
+	expmeter_times_jd = Time(list(expmeter_times_iso), format='isot', scale='utc').jd
+
+	#expmeter_times = np.array([Time(expmeter_df['DateTimeUT'].iloc[i], format='isot', scale='utc').jd for i in range(len(expmeter_df))])
+	cumulative_counts = expmeter_df['Exposure Meter Counts'].values
+
+	# Define the exposure start and end times from the header
+	exposure_start = Time(hdr['DATE-OBS'], format='isot', scale='utc')
+	exposure_end = exposure_start + TimeDelta(hdr['EXPTIME'] * u.s)
+
+	# Create a mask for measurements within the exposure time
+	mask_within_exposure = (expmeter_times_jd >= exposure_start.jd) & (expmeter_times_jd <= exposure_end.jd)
+	if mask_within_exposure.sum() < 2:
+		print("No data within exposure")
+		return None
+
+	# Extract times and counts within the exposure
+	times_within_exposure = expmeter_times_jd[mask_within_exposure]
+	cumulative_counts_within_exposure = cumulative_counts[mask_within_exposure]
+
+	# Compute time intervals and counts per interval (instantaneous flux)
+	delta_times = np.diff(times_within_exposure) * 24 * 3600  # Convert JD difference to seconds
+	delta_counts = np.diff(cumulative_counts_within_exposure)
+
+	# Compute instantaneous flux (counts per second)
+	instantaneous_flux = delta_counts / delta_times
+
+	# Compute midpoints of time intervals
+	time_midpoints = times_within_exposure[:-1] + np.diff(times_within_exposure) / 2
+
+	# Time since exposure start
+	time_since_start = time_midpoints - exposure_start.jd
+
+	# Calculate the flux-weighted mean time since the start of the exposure
+	numerator = np.sum(instantaneous_flux * time_since_start)
+	denominator = np.sum(instantaneous_flux)
+	flux_weighted_mean_time_since_start = numerator / denominator
+
+	# Calculate the flux-weighted mean exposure time
+	flux_weighted_mean_time_Time_object = Time(hdr['DATE-OBS'], format='isot', scale='utc') + TimeDelta(flux_weighted_mean_time_since_start * u.day)
+	return flux_weighted_mean_time_Time_object
+
+
 def extractFIES(filename):
 	'''Extract FIES data (FIEStool).
 
@@ -299,7 +413,48 @@ def extractFIES(filename):
 
 	return wave, flux, error, hdr
 
-def sortFIES(path):
+def sortFIES(path,subdir=None,ext='wave'):
+	'''Sort files in Science/ThAr.
+
+	Function that returns list of science and/or ThAr spectra from FIES.
+	
+	:param path: Path to files.
+	:type path: str
+
+	:param subdir: Subdirectory to look for files, defaults to None. Could be 'YYYY-MM-DD/reduced/' for example.
+	:type subdir: str, optional
+
+	:param ext: Extension of the files to look for, defaults to 'wave'. Could be 'merge' for merged spectra.
+	:type ext: str, optional
+	
+	:return: list of science spectra, list of ThAr spectra
+	:rtype: list, list
+	
+	'''
+	assert ext in ['wave','merge'], "ext must be 'wave' or 'merge'"
+	path = os.path.join(path, subdir) if subdir else path
+	files = glob.glob(path+f'*{ext}.fits')
+
+	science = []
+	thar = []
+
+	for file in files:
+		hdr = pyfits.getheader(file)
+		star = hdr['OBJECT']
+		if star == 'ThAr':
+			thar.append(file)
+		elif 'ThAr' in star:
+			thar.append(file)
+		else:
+			science.append(file)
+
+	## Sort the lists
+	science.sort()
+	thar.sort()
+
+	return science, thar
+
+def sortFIESOld(path):
 	'''Sort files in Science/ThAr.
 
 	Function that returns list of science and/or ThAr spectra from FIES.
@@ -328,6 +483,53 @@ def sortFIES(path):
 
 	return science, thar
 
+def getBarycorrsFluxWeighted(hdr, jd, rvmeas, loc='Roque de los Muchachos'):
+	'''Barycentric correction.
+
+	Function to correct for the barycentric velocity, 
+	and convert the time of the observation to BJD TDB.
+
+	:param hdr: FIES fits header.
+	:type hdr: astropy.io.fits.Header
+	
+	:param jd: Flux-weighted Julian Date of the observation.
+	:type jd: float
+	
+	:param rvmeas: The measured radial velocity. See :py:mod:`barycorrpy` @ https://github.com/shbhuk/barycorrpy/blob/master/barycorrpy/barycorrpy.py#L99.
+	:type rvmeas: float
+
+	:param loc: The name of the observatory. Optional, defaults to 'Roque de los Muchachos'. 
+	:type loc: str
+	
+	:return: BJD TDB, barycentric velocity correction
+	:rtype: float, float
+
+	.. note::
+		- Exception omits star name, defaults to RA/DEC.
+		- Split into two functions, one for barycentric correction, one for BJD TDB?
+
+	'''
+	
+
+	star = hdr['OBJECT']
+
+	ra = hdr['OBJRA']*15.0		# convert unit
+	dec = hdr['OBJDEC']
+	
+	
+	z_meas = rvmeas*1000 / const.c.value #speed_of_light
+	try:
+		rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, starname=star, ephemeris='de432s', obsname=loc, zmeas=z_meas)
+		bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, starname=star, obsname=loc)
+	except Exception:
+		rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, ephemeris='de432s', obsname=loc, zmeas=z_meas)
+		bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, obsname=loc)
+
+	rv_cor = rv_cor / 1000	 # from m/s to km/s
+	
+
+	return float(bjd), float(rv_cor[0]-rvmeas)
+
 def getBarycorrs(filename, rvmeas):
 	'''Barycentric correction.
 
@@ -337,8 +539,8 @@ def getBarycorrs(filename, rvmeas):
 	:param filename: FIES fits file.
 	:type filename: str
 	
-	:param rvsys: The measured radial velocity. See :py:mod:`barycorrpy` @ https://github.com/shbhuk/barycorrpy/blob/master/barycorrpy/barycorrpy.py#L99.
-	:type rvsys: float
+	:param rvmeas: The measured radial velocity. See :py:mod:`barycorrpy` @ https://github.com/shbhuk/barycorrpy/blob/master/barycorrpy/barycorrpy.py#L99.
+	:type rvmeas: float
 
 	:return: BJD TDB, barycentric velocity correction
 	:rtype: float, float
@@ -376,7 +578,7 @@ def getBarycorrs(filename, rvmeas):
 	try:
 		rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, starname=star, ephemeris='de432s', obsname=loc, zmeas=z_meas)
 		bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, starname=star, obsname=loc)
-	except ValueError:
+	except Exception:
 		rv_cor, _, _ = get_BC_vel(jd, ra=ra, dec=dec, ephemeris='de432s', obsname=loc, zmeas=z_meas)
 		bjd, _, _, = utc_tdb.JDUTC_to_BJDTDB(jd, ra=ra, dec=dec, obsname=loc)
 
@@ -415,6 +617,85 @@ def getOrder(wl,wave,rv=0.):
 	
 	return orders
 
+def getAirmass(hdr, loc='Roque de los Muchachos'):
+	'''Calculate airmass.
+
+	Calculate the airmass at the time of the observation using the date, RA, DEC, and location of the observatory.
+
+	:param hdr: FIES fits header.
+	:type hdr: astropy.io.fits.Header
+
+	:param loc: The name of the observatory. Optional, defaults to 'Roque de los Muchachos'.
+	:type loc: str
+	
+	:return: Airmass at the time of the observation.
+	:rtype: float
+	'''
+	date_mid = hdr['DATE-AVG']
+	jd = Time(date_mid, format='isot', scale='utc')
+	star = hdr['OBJECT']
+
+	ra = hdr['OBJRA']*15.0		# convert unit
+	dec = hdr['OBJDEC']
+
+	obs = EarthLocation.of_site(loc)
+	coord = SkyCoord(ra=ra*u.degree, dec=dec*u.degree)
+	altaz = coord.transform_to(AltAz(obstime=jd, location=obs))
+	airmass = altaz.secz.value
+	return airmass
+
+def getMoonPhase(hdr):
+	'''Calculate moon phase.
+
+	Calculate the moon phase at the time of the observation using the date and location of the observatory.
+
+	:param hdr: FIES fits header.
+	:type hdr: astropy.io.fits.Header
+
+
+	:return: Moon phase at the time of the observation, in degrees (0-360).
+	:rtype: float
+	'''
+	date_mid = hdr['DATE-AVG']
+	jd = Time(date_mid, format='isot', scale='utc')
+	moon = get_body('moon', jd)
+	sun = get_sun(jd)
+	elong = sun.separation(moon)
+	phase_angle = np.arctan2(sun.distance * np.sin(elong), moon.distance - sun.distance * np.cos(elong))
+	phase = (1 + np.cos(phase_angle)) / 2
+	phase_perc = f"{phase * 100:.0f}"
+	return phase_perc
+
+# =============================================================================
+# Telluric line mask
+# =============================================================================
+
+# def loadTelluricMask(maskfile):
+# 	'''Load the telluric mask atlas and return a contamination interpolator.
+
+# 	The atlas has two columns: wavelength (Angstrom) and contamination value
+# 	(0 = uncontaminated, 1 = telluric-contaminated), sampled on a fine
+# 	wavelength grid.  The returned callable interpolates the contamination
+# 	at arbitrary wavelengths; values above ``tell_threshold`` (typically
+# 	0.01) indicate pixels that should be excluded from the CCF.
+
+# 	The atlas wavelengths are in the geocentric (observatory) rest frame,
+# 	matching the un-BVC-corrected observed spectra.
+
+# 	:param maskfile: Path to the two-column ASCII telluric mask atlas.
+# 	:type maskfile: str
+
+# 	:return: Interpolation function ``f(wl)`` returning contamination values
+# 		in [0, 1].  Wavelengths outside the atlas range return 0 (clean).
+# 	:rtype: callable
+# 	'''
+# 	atlas    = np.loadtxt(maskfile)
+# 	tell_wl  = atlas[:, 0]
+# 	tell_val = atlas[:, 1]
+# 	fwl = interp1d(tell_wl, tell_val, kind='linear',bounds_error=False, fill_value=0.0)
+# 	return fwl
+
+	
 # =============================================================================
 # Group by epochs
 # =============================================================================
@@ -477,7 +758,8 @@ def groupByEpochs(path,
 		for idx in idxs:
 			bjdnext = bjds[idx]
 			if bjdnext not in booked: booked.append(bjdnext)
-		epochs[ll] = {'names':list(scifiles[idxs]),'bjds':bjds[idxs]}
+		names = [str(scifiles[idx]) for idx in idxs]
+		epochs[ll] = {'names':names,'bjds':bjds[idxs]}
 		ll += 1
 	return epochs
 
@@ -485,7 +767,7 @@ def groupByEpochs(path,
 # Grids and resolution
 # =============================================================================
 
-def velRes(R=67000,s=2.1,fib=None):
+def velRes(R=67000,s=2.1):
 	'''Velocity resolution.
 	
 	The resolution of the spectrograph in velocity space.
@@ -502,26 +784,76 @@ def velRes(R=67000,s=2.1,fib=None):
 	:type R: float
 	:param s: Spectral sampling in pixels per spectral element. Default is 2.1.
 	:type s: float
-	:param fib: Fibre number. Default is ``None``. If ``None``, the default values are used (fibre 4).
-	:type fib: int
 
 	:return: Velocity resolution in km/s.
 	:rtype: float
 	
 	'''
-	if fib == 1:
-		R, s = 25000, 5.9
-	elif fib == 2:
-		R, s = 45000, 3.2
-	elif fib == 3:
-		R, s = 45000, 3.2
-	elif fib == 4:
-		R, s = 67000, 2.1
+	# if fib == 1:
+	# 	R, s = 25000, 5.9
+	# elif fib == 2:
+	# 	R, s = 45000, 3.2
+	# elif fib == 3:
+	# 	R, s = 45000, 3.2
+	# elif fib == 4:
+	# 	R, s = 67000, 2.1
 
 	dv = 1e-3*const.c.value/(R*s)
 	return dv
 
-def grids(rvr=401,R=67000,s=2.1,fib=None):
+# def velGrid(nprv=201,rvr=40,R=67000,s=2.1):
+# 	'''Velocity grid for the CCFs
+
+# 	Calculate the velocity grid for the CCFs given the radial velocity range, resolution, and spectral sampling.
+
+
+# 	:param rvr: (Desired) radial velocity range for the CCF in km/s. Default is 201.
+# 	:type rvr: int
+# 	:param R: Spectral resolution. Default is 67000 (FIES fibre 4, see :py:func:`velRes`).
+# 	:type R: float
+# 	:param s: Spectral sampling in pixels per spectral element. Default is 2.1 (FIES, see :py:func:`velRes`).
+# 	:type s: float
+
+# 	:return: Velocity grid and actual radial velocity range.
+# 	:rtype: array, int
+# 	'''
+# 	dv = velRes(R=R,s=s)
+# 	arvr = int(nprv/dv)
+# 	if arvr % 2 == 0: arvr += 1
+# 	rvs = np.linspace(-rvr, rvr, arvr)
+# 	return rvs
+
+def velGrid(rvr=40, R=67000, s=2.1, ccf_sampling=2):
+	'''Velocity grid for the CCFs
+
+	Calculate the velocity grid for the CCFs given the radial velocity range, resolution, spectral sampling, and oversampling factor.
+
+	:param rvr: Radial velocity range for the CCF in km/s. Default is 40.
+	:type rvr: int
+	:param R: Spectral resolution. Default is 67000 (FIES fibre 4, see :py:func:`velRes`).
+	:type R: float
+	:param s: Spectral sampling in pixels per spectral element. Default is 2.1 (FIES, see :py:func:`velRes`).
+	:type s: float
+	:param ccf_sampling: Oversampling factor for the CCF velocity grid. Default is 2.
+	:type ccf_sampling: int
+
+	:return: Velocity grid for the CCFs.
+	:rtype: array
+
+	'''
+	dv_res = 1e-3 * const.c.value / R # velocity resolution in km/s
+	dv_pix = dv_res / s # velocity per pixel in km/s
+	dv = dv_pix / ccf_sampling # oversampled velocity per pixel in km/s
+
+	n = int(2 * rvr / dv) + 1
+
+	# force odd number of points
+	if n % 2 == 0: n += 1
+	rvs = np.linspace(-rvr, rvr, n)
+
+	return rvs
+
+def grids(rvr=201,R=67000,s=2.1):
 	'''Grids for CCFs.
 
 	Create the CCF grids for the given radial velocity range and resolution.
@@ -530,7 +862,7 @@ def grids(rvr=401,R=67000,s=2.1,fib=None):
 
 	A (typically) finer grid is also created for the CCFs, with a resolution of 250 m/s.
 
-	:param rvr: (Desired) radial velocity range for the CCF in km/s. Default is 401.
+	:param rvr: (Desired) radial velocity range for the CCF in km/s. Default is 201.
 	:type rvr: int
 	:param R: Spectral resolution. Default is 67000 (FIES fibre 4, see :py:func:`velRes`).
 	:type R: float
@@ -545,7 +877,7 @@ def grids(rvr=401,R=67000,s=2.1,fib=None):
 	'''
 
 	## Get the velocity resolution
-	dv = velRes(R=R,s=s,fib=fib)
+	dv = velRes(R=R,s=s)
 
 	## This is the actual RV range
 	arvr = int(rvr/dv)

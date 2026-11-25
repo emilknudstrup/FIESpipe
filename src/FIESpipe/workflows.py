@@ -20,6 +20,10 @@ def standard(filename,
 	exclude=[],
 	rvsys=None,
 	gauss=False,
+	teff=6250, 
+	logg=4.0, 
+	feh=0.0, 
+	alpha=0.0,
 	pidx=3,
 	rvr=41,	#RV range
 	chi2rvr=20, #RV range for chi2 minimization
@@ -82,6 +86,14 @@ def standard(filename,
 	:type rvsys: float
 	:param gauss: If ``True``, the :math:`\chi^2` RVs are fitted with a gaussian. If ``False``, a second order polynomial is fitted.
 	:type gauss: bool
+	:param teff: Effective temperature of the star in K. Used to select the template. Default is 6250 K.
+	:type teff: float
+	:param logg: Surface gravity of the star in cgs. Used to select the template. Default is 4.0.
+	:type logg: float
+	:param feh: Metallicity of the star in dex. Used to select the template. Default is 0.0.
+	:type feh: float
+	:param alpha: Alpha enhancement of the star in dex. Used to select the template. Default is 0.0.
+	:type alpha: float
 	:param pidx: Number of indices on either side of peak for polynomial used to fit the :math:`\chi^2` RVs. Default is 3.
 	:type pidx: int
 	:param rvr: RV range in km/s for the CCFs.
@@ -182,10 +194,13 @@ def standard(filename,
 
 	## Template
 	## Hardcoded for now
-	tpath = path + '/../../data/temp/kurucz/'
-	temp = '6250_40_p00p00.ms.fits'
-	twl, tfl = readKurucz(tpath+temp)
-	
+	# tpath = path + '/../../data/temp/kurucz/'
+	# temp = '6250_40_p00p00.ms.fits'
+	# twl, tfl = readKurucz(tpath+temp)
+	tempfile = getKurucz(teff, logg=logg, feh=feh, alpha=alpha)
+	## And as in the previous examples, we read the file
+	twl, tfl = readKurucz(tempfile)
+
 	## If systemic velocity is not provided
 	## do a preliminary RV measurement
 	if rvsys is None:
@@ -801,7 +816,8 @@ def servalish(filenames,
 				ervs = np.append(ervs,erv)
 		
 		## Calculate the weighted average RV
-		wavg_rv, wavg_err, mu, std  = weightedMean(rvs,ervs,out=out,sigma=sigma_out)
+		# wavg_rv, wavg_err, mu, std  = weightedMean(rvs,ervs,out=out,sigma=sigma_out)
+		wavg_rv, wavg_err  = weightedMean(rvs,ervs,out='gauss',sigma=sigma_out)
 		print('Weighted average RV: {:.3f} +/- {:.3f} km/s'.format(wavg_rv,wavg_err))
 		all_times = np.append(all_times,time)
 		all_rvs = np.append(all_rvs,wavg_rv)
@@ -891,7 +907,8 @@ def prepareSpectra(
 				rv = -pars[1]/(2*pars[0])
 				## The curvature is taking as the error.
 				erv = np.sqrt(2/pars[0])
-			except ValueError:
+			except (IndexError, ValueError):
+			# except ValueError:
 				print('Chi2 fit for order {} in file {} failed.\n Might have low SNR.'.format(order,file))
 				rv, erv = np.nan, np.nan
 
@@ -899,7 +916,8 @@ def prepareSpectra(
 				rvs = np.append(rvs,rv)
 				ervs = np.append(ervs,erv)
 
-		wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		# wavg_rv, wavg_err, _, _  = weightedMean(rvs,ervs,out=1,sigma=5)
+		wavg_rv, wavg_err  = weightedMean(rvs,ervs,out='mad')
 
 		## Get BJD_TDB 
 		bjd, _ = getBarycorrs(file,wavg_rv)
